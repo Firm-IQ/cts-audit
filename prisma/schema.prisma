@@ -1,0 +1,164 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id          String       @id @default(uuid())
+  email       String       @unique
+  password    String       // Hashed password
+  name        String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  assessments Assessment[]
+  advisors    Advisor[]
+}
+
+model Advisor {
+  id                    String       @id @default(uuid())
+  name                  String
+  firmName              String
+  email                 String?
+  phone                 String?
+  currentFirm           String?
+  currentCustodian      String?
+  futureCustodian       String?
+  businessModel         String       @default("Unknown") // RIA, Broker Dealer, Hybrid, Unknown
+  protocolStatus        String       @default("Unsure")  // Yes, No, Unsure
+  totalAum              Float?       // In Millions USD
+  annualRevenue         Float?       // In USD
+  households            Int?
+  accounts              Int?
+  staffCount            Int?
+  crm                   String?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+
+  assessments           Assessment[]
+  contacts              Contact[]
+  journalEntries        JournalEntry[]
+  
+  // Link to Creator User
+  createdById           String?
+  createdBy             User?        @relation(fields: [createdById], references: [id])
+}
+
+model Contact {
+  id                     String   @id @default(uuid())
+  advisorId              String
+  advisor                Advisor  @relation(fields: [advisorId], references: [id], onDelete: Cascade)
+  contactType            String   // Advisor, Executive Assistant, Partner, Attorney, CPA, Compliance Contact, OSJ / Supervisory Contact, Custodian Contact, Operations Contact, Other
+  name                   String
+  title                  String?
+  company                String?
+  email                  String?
+  phone                  String?
+  mobilePhone            String?
+  preferredContactMethod String   @default("Email") // Email, Phone, Text, Other
+  roleInTransition       String?
+  notes                  String?
+  primaryContact         Boolean  @default(false)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+}
+
+model Assessment {
+  id                    String   @id @default(uuid())
+  advisorId             String
+  advisor               Advisor  @relation(fields: [advisorId], references: [id], onDelete: Cascade)
+  
+  notes                 String?  // Holds status, evidence notes, advisor profile data, etc.
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  // Client Data Readiness
+  emailCompletenessPercent     Float    @default(0)
+  phoneCompletenessPercent     Float    @default(0)
+  addressCompletenessPercent   Float    @default(0)
+  householdingQualityScore     Int      @default(1) // 1-10
+  duplicateRecordRiskScore     Int      @default(1) // 1-10
+  clientNotesQualityScore      Int      @default(1) // 1-10
+
+  // KYC / Documentation Readiness
+  kycUpdateFrequency           String   @default("Ad-hoc") // Annual, Triennial, Ad-hoc
+  trustedContactCompletenessPercent Float @default(0)
+  beneficiaryReviewStatus      String   @default("None") // Complete, Incomplete, None
+  riskToleranceCurrentPercent  Float    @default(0)
+  investmentObjectiveCurrentPercent Float @default(0)
+  missingSignatureRiskScore    Int      @default(1) // 1-10
+  documentStorageQualityScore  Int      @default(1) // 1-10
+
+  // Transfer Complexity
+  percentIraAccounts           Float    @default(0)
+  percentTrustAccounts         Float    @default(0)
+  percentEntityAccounts        Float    @default(0)
+  percentAnnuityAltAccounts    Float    @default(0)
+  directBusinessAmount         Float    @default(0)
+  heldAwayAssetsNotes          String?
+  transferComplexityScore      Int      @default(1) // 1-10
+
+  // Operational Readiness
+  staffCapacityScore           Int      @default(1) // 1-10
+  crmExportQualityScore        Int      @default(1) // 1-10
+  taskManagementScore          Int      @default(1) // 1-10
+  digitalSignatureReadinessScore Int    @default(1) // 1-10
+  communicationPlanScore       Int      @default(1) // 1-10
+
+  // Compliance / Protocol Awareness
+  employmentAgreementReviewed  Boolean  @default(false)
+  nonSolicitNonCompeteConcerns Boolean  @default(false)
+  legalReviewStatus            String   @default("None") // Completed, Pending, None
+  complianceRiskNotes          String?
+
+  // Generated Know Your Book™ Index Scores (calculated on save)
+  overallReadinessScore        Float    @default(0)
+  clientDataScore              Float    @default(0)
+  kycDocumentationScore        Float    @default(0)
+  transferComplexityScoreVal   Float    @default(0)
+  operationalScore             Float    @default(0)
+  complianceProtocolScore      Float    @default(0)
+  communicationScore           Float    @default(0)
+  
+  // Link to Creator User
+  createdByUserId              String?
+  createdByUser                User?    @relation(fields: [createdByUserId], references: [id])
+  findings                     Finding[]
+}
+
+model JournalEntry {
+  id            String   @id @default(uuid())
+  advisorId     String
+  advisor       Advisor  @relation(fields: [advisorId], references: [id], onDelete: Cascade)
+  title         String
+  entryType     String   // Discovery Call, Meeting, Phone Call, Internal Note, Compliance, Operations, Transition Planning, Risk, Follow-up, General
+  date          String   // e.g. YYYY-MM-DD
+  author        String
+  summary       String
+  detailedNotes String?
+  confidential  Boolean  @default(false)
+  pinned        Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Finding {
+  id             String     @id @default(uuid())
+  assessmentId   String
+  assessment     Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  category       String     // Client Records, KYC, Documentation, Operations, Compliance, Account Types, Technology, Communication, Other
+  title          String
+  description    String
+  severity       String     // Critical, High, Moderate, Low
+  impact         String?
+  recommendation String?
+  owner          String     // CTS, Advisor, Advisor Staff, Compliance, Legal, Unknown
+  status         String     // Open, In Progress, Resolved, Not Applicable
+  reviewerNotes  String?
+  evidenceSummary String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+}
