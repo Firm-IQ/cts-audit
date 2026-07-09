@@ -13,6 +13,17 @@ interface AuditFormProps {
 
 type TabType = 'profile' | 'clientIntelligence' | 'operationalReadiness' | 'transitionComplexity' | 'review';
 
+interface Criterion {
+  status: string;
+  comments: string;
+  createFinding: boolean;
+  evidenceType: string;
+  evidenceSummary: string;
+  evidenceConfidence: string;
+  evidenceReviewedBy: string;
+  evidenceReviewDate: string;
+}
+
 export default function AuditForm({ initialData = {}, isEdit = false, reviewerName = '' }: AuditFormProps) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabType>('profile');
@@ -58,7 +69,7 @@ export default function AuditForm({ initialData = {}, isEdit = false, reviewerNa
       tags: [] as string[],
       internalNotes: '',
 
-      criteria: {} as Record<string, { status: string; comments: string; createFinding: boolean }>,
+      criteria: {} as Record<string, Criterion>,
       generalNotes: notesText || ''
     };
 
@@ -96,7 +107,7 @@ export default function AuditForm({ initialData = {}, isEdit = false, reviewerNa
       let tags: string[] = [];
       let internalNotesLines: string[] = [];
 
-      let criteria: Record<string, { status: string; comments: string; createFinding: boolean }> = {};
+      let criteria: Record<string, Criterion> = {};
       let generalNotesLines: string[] = [];
       
       let mode: 'none' | 'evidenceNotes' | 'docs' | 'reason' | 'internalNotes' | 'general' | 'criteria' = 'none';
@@ -1387,7 +1398,16 @@ ${formData.notes}
                                 <h4 className="font-bold text-slate-200 text-sm mb-3">Structured Criteria & Gaps</h4>
                                 <div className="space-y-4">
                                   {categoriesList.map((cat) => {
-                                    const crit = clientCriteria[cat.key as keyof typeof clientCriteria] || { status: 'Meets Expectations', comments: '', createFinding: false };
+                                    const crit: Criterion = clientCriteria[cat.key as keyof typeof clientCriteria] || {
+                                      status: 'Meets Expectations',
+                                      comments: '',
+                                      createFinding: false,
+                                      evidenceType: 'CRM Export',
+                                      evidenceSummary: '',
+                                      evidenceConfidence: 'High',
+                                      evidenceReviewedBy: '',
+                                      evidenceReviewDate: '',
+                                    };
                                     return (
                                       <div key={cat.key} className="border-b border-slate-800 pb-3">
                                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
