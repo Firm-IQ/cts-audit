@@ -10,7 +10,7 @@ An internal password-protected web application built for **Continuity Transition
 - **Language:** TypeScript
 - **Styling:** Tailwind CSS v4 & custom CSS print sheets
 - **Database ORM:** Prisma Client v6
-- **Database Engines:** SQLite (Local Development) / PostgreSQL (Production)
+- **Database Engine:** PostgreSQL (Local Development & Production)
 - **Data Visualization:** Recharts (Interactive benchmarking & spider-chart matrices)
 - **Security:** Session cookies with secure JWT authentication validated in Next.js Middleware
 
@@ -19,7 +19,7 @@ An internal password-protected web application built for **Continuity Transition
 ## Getting Started (Local Development)
 
 ### 1. Prerequisites
-Ensure you have **Node.js (v18+)** and **npm** installed on your system.
+Ensure you have **Node.js (v18+)**, **npm**, and a running **PostgreSQL** instance installed on your system.
 
 ### 2. Clone and Install Dependencies
 Install all packages, including development packages:
@@ -28,16 +28,16 @@ npm install
 ```
 
 ### 3. Environment Variables Configuration
-The project is configured out-of-the-box to use local SQLite. Create a `.env` file in the root directory (one is pre-configured during setup):
+Create a `.env` file in the root directory:
 ```env
-DATABASE_URL="file:./dev.db"
+DATABASE_URL="postgresql://username:password@localhost:5432/cts_audit?schema=public"
 JWT_SECRET="continuity-transition-readiness-audit-jwt-secret-key-987654321"
 ADMIN_EMAIL="curt@gocontinuity.com"
 ADMIN_PASSWORD=""
 ```
 
 ### 4. Database Setup & Seeding
-Run initial Prisma migrations to generate the SQLite database file (`dev.db`) and seed the initial administrator credentials along with three mock advisor assessments (Ready, Advisory, and Critical):
+Run initial Prisma migrations to set up the PostgreSQL database and seed the initial administrator credentials along with three mock advisor assessments (Ready, Advisory, and Critical):
 ```bash
 npx prisma migrate dev --name init
 npx prisma db seed
