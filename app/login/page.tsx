@@ -171,7 +171,7 @@ function LoginFormContent() {
             <Input
               id="email"
               type="email"
-              placeholder="name@cts.com"
+              placeholder="curt@gocontinuity.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -187,7 +187,6 @@ function LoginFormContent() {
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              required
               disabled={loading}
             />
           </div>

@@ -22,26 +22,38 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { name, category, description, active, displayOrder } = body;
+    const { name, documentKey, category, description, typicalAccountTypes, critical, active, notes, displayOrder } = body;
 
-    if (!name || !category) {
-      return NextResponse.json({ error: 'Name and Category are required' }, { status: 400 });
+    if (!name || !documentKey || !category) {
+      return NextResponse.json({ error: 'Name, Document Key, and Category are required' }, { status: 400 });
     }
 
     // Check unique name
-    const existing = await prisma.documentType.findUnique({
+    const existingName = await prisma.documentType.findUnique({
       where: { name }
     });
-    if (existing) {
+    if (existingName) {
       return NextResponse.json({ error: 'Document Type with this name already exists' }, { status: 400 });
+    }
+
+    // Check unique key
+    const existingKey = await prisma.documentType.findUnique({
+      where: { documentKey }
+    });
+    if (existingKey) {
+      return NextResponse.json({ error: 'Document Type with this Document Key already exists' }, { status: 400 });
     }
 
     const docType = await prisma.documentType.create({
       data: {
         name,
+        documentKey,
         category,
         description: description || '',
-        active: active !== undefined ? active : true,
+        typicalAccountTypes: typicalAccountTypes || 'All',
+        critical: critical !== undefined ? !!critical : false,
+        active: active !== undefined ? !!active : true,
+        notes: notes || '',
         displayOrder: displayOrder !== undefined ? parseInt(displayOrder) : 0
       }
     });

@@ -32,8 +32,8 @@ The project is configured out-of-the-box to use local SQLite. Create a `.env` fi
 ```env
 DATABASE_URL="file:./dev.db"
 JWT_SECRET="continuity-transition-readiness-audit-jwt-secret-key-987654321"
-ADMIN_EMAIL="admin@cts.com"
-ADMIN_PASSWORD="adminpassword"
+ADMIN_EMAIL="curt@gocontinuity.com"
+ADMIN_PASSWORD=""
 ```
 
 ### 4. Database Setup & Seeding
@@ -55,8 +55,8 @@ Open your browser and navigate to [http://localhost:3000](http://localhost:3000)
 ## Testing Credentials
 
 Use the seeded internal auditor credentials to access the dashboard:
-- **Email:** `admin@cts.com`
-- **Password:** `adminpassword`
+- **Email:** `curt@gocontinuity.com`
+- **Password:** You will be prompted to set your password upon your first login attempt.
 
 ---
 

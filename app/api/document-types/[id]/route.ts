@@ -22,7 +22,7 @@ export async function PUT(
     }
 
     const body = await request.json();
-    const { name, category, description, active, displayOrder } = body;
+    const { name, documentKey, category, description, typicalAccountTypes, critical, active, notes, displayOrder } = body;
 
     const dataToUpdate: any = {};
     if (name !== undefined) {
@@ -34,9 +34,21 @@ export async function PUT(
       }
       dataToUpdate.name = name;
     }
+    if (documentKey !== undefined) {
+      if (documentKey !== docType.documentKey) {
+        const existing = await prisma.documentType.findUnique({ where: { documentKey } });
+        if (existing) {
+          return NextResponse.json({ error: 'Document Type with this Document Key already exists' }, { status: 400 });
+        }
+      }
+      dataToUpdate.documentKey = documentKey;
+    }
     if (category !== undefined) dataToUpdate.category = category;
     if (description !== undefined) dataToUpdate.description = description;
-    if (active !== undefined) dataToUpdate.active = active;
+    if (typicalAccountTypes !== undefined) dataToUpdate.typicalAccountTypes = typicalAccountTypes;
+    if (critical !== undefined) dataToUpdate.critical = !!critical;
+    if (active !== undefined) dataToUpdate.active = !!active;
+    if (notes !== undefined) dataToUpdate.notes = notes;
     if (displayOrder !== undefined) dataToUpdate.displayOrder = parseInt(displayOrder);
 
     const updated = await prisma.documentType.update({

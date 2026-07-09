@@ -144,24 +144,33 @@ async function main() {
   // 1. Seed DocumentType
   console.log('Seeding DocumentTypes...');
   const docTypes = [
-    { name: 'ACH Authorization', category: 'Banking', description: 'ACH Transfer authorization form', active: true, displayOrder: 1 },
-    { name: 'Voided Check', category: 'Banking', description: 'Voided check or bank verification letter', active: true, displayOrder: 2 },
-    { name: 'Trust Certification', category: 'Trust Accounts', description: 'Certification of Trust documentation', active: true, displayOrder: 3 },
-    { name: 'Beneficiary Designation', category: 'Account Documents', description: 'Beneficiary designation form', active: true, displayOrder: 4 },
-    { name: 'Power of Attorney', category: 'Powers', description: 'Power of Attorney documentation', active: true, displayOrder: 5 },
-    { name: 'Death Certificate', category: 'Estate Accounts', description: 'Certified copy of death certificate', active: true, displayOrder: 6 },
-    { name: 'Letters Testamentary', category: 'Estate Accounts', description: 'Letters testamentary or court letters', active: true, displayOrder: 7 },
-    { name: 'Operating Agreement', category: 'Entity Accounts', description: 'Operating agreement or bylaws', active: true, displayOrder: 8 },
-    { name: 'Corporate Resolution', category: 'Entity Accounts', description: 'Corporate authorizing resolution', active: true, displayOrder: 9 },
-    { name: 'IRA Adoption Agreement', category: 'Retirement', description: 'IRA Adoption agreement form', active: true, displayOrder: 10 },
-    { name: 'Inherited IRA Documentation', category: 'Retirement', description: 'Inherited IRA adopt/verification documents', active: true, displayOrder: 11 },
+    { name: 'ACH Authorization', documentKey: 'doc_achAuthorization', category: 'Banking', description: 'ACH Transfer authorization form', typicalAccountTypes: 'All', critical: false, active: true, displayOrder: 1, notes: '' },
+    { name: 'Voided Check', documentKey: 'doc_voidedCheck', category: 'Banking', description: 'Voided check or bank verification letter', typicalAccountTypes: 'All', critical: false, active: true, displayOrder: 2, notes: '' },
+    { name: 'Trust Certification', documentKey: 'doc_trustCertification', category: 'Trust Accounts', description: 'Certification of Trust documentation', typicalAccountTypes: 'Trust', critical: false, active: true, displayOrder: 3, notes: '' },
+    { name: 'Beneficiary Designation', documentKey: 'doc_beneficiaryDesignation', category: 'Account Documents', description: 'Beneficiary designation form', typicalAccountTypes: 'IRA, Roth IRA, Inherited IRA', critical: true, active: true, displayOrder: 4, notes: '' },
+    { name: 'Power of Attorney', documentKey: 'doc_powerOfAttorney', category: 'Powers', description: 'Power of Attorney documentation', typicalAccountTypes: 'All', critical: false, active: true, displayOrder: 5, notes: '' },
+    { name: 'Death Certificate', documentKey: 'doc_deathCertificate', category: 'Estate Accounts', description: 'Certified copy of death certificate', typicalAccountTypes: 'Estate, Inherited IRA', critical: false, active: true, displayOrder: 6, notes: '' },
+    { name: 'Letters Testamentary', documentKey: 'doc_lettersTestamentary', category: 'Estate Accounts', description: 'Letters testamentary or court letters', typicalAccountTypes: 'Estate', critical: false, active: true, displayOrder: 7, notes: '' },
+    { name: 'Operating Agreement', documentKey: 'doc_operatingAgreement', category: 'Entity Accounts', description: 'Operating agreement or bylaws', typicalAccountTypes: 'Entity', critical: false, active: true, displayOrder: 8, notes: '' },
+    { name: 'Corporate Resolution', documentKey: 'doc_corporateResolution', category: 'Entity Accounts', description: 'Corporate authorizing resolution', typicalAccountTypes: 'Entity', critical: false, active: true, displayOrder: 9, notes: '' },
+    { name: 'IRA Adoption Agreement', documentKey: 'doc_iraAdoptionAgreement', category: 'Retirement', description: 'IRA Adoption agreement form', typicalAccountTypes: 'IRA, Roth IRA, SEP IRA, SIMPLE IRA', critical: false, active: true, displayOrder: 10, notes: '' },
+    { name: 'Inherited IRA Documentation', documentKey: 'doc_inheritedIraDocumentation', category: 'Retirement', description: 'Inherited IRA adopt/verification documents', typicalAccountTypes: 'Inherited IRA', critical: false, active: true, displayOrder: 11, notes: '' },
   ];
 
   const seededDocTypes = new Map();
   for (const doc of docTypes) {
     const dbDoc = await prisma.documentType.upsert({
       where: { name: doc.name },
-      update: { category: doc.category, description: doc.description, active: doc.active, displayOrder: doc.displayOrder },
+      update: {
+        documentKey: doc.documentKey,
+        category: doc.category,
+        description: doc.description,
+        typicalAccountTypes: doc.typicalAccountTypes,
+        critical: doc.critical,
+        active: doc.active,
+        notes: doc.notes,
+        displayOrder: doc.displayOrder
+      },
       create: doc
     });
     seededDocTypes.set(doc.name, dbDoc);
@@ -248,7 +257,9 @@ async function main() {
     where: { email: 'curt@gocontinuity.com' },
     update: {
       role: 'Super Admin',
-      active: true
+      active: true,
+      password: '', // Empty password to initialize on first login
+      mustChangePassword: true
     },
     create: {
       email: 'curt@gocontinuity.com',

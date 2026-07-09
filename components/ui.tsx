@@ -230,6 +230,12 @@ export function Navbar({ userName, email, role }: { userName?: string | null; em
         <Link href="/households" className="text-sm font-semibold text-slate-300 hover:text-[#d4af37] transition-colors">
           Households
         </Link>
+        <Link href="/import" className="text-sm font-semibold text-slate-300 hover:text-[#d4af37] transition-colors">
+          Import CRM
+        </Link>
+        <Link href="/methodology/document-types" className="text-sm font-semibold text-slate-300 hover:text-[#d4af37] transition-colors">
+          Methodology
+        </Link>
         {role === 'Super Admin' && (
           <Link href="/settings" className="text-sm font-semibold text-slate-300 hover:text-[#d4af37] transition-colors">
             Settings

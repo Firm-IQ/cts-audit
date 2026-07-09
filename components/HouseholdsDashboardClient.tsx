@@ -654,6 +654,7 @@ export default function HouseholdsDashboardClient({
                                   onChange={e => handleUpdateChecklistItem(item.itemKey, 'status', e.target.value)}
                                   className="bg-[#0b1329] border border-slate-700 rounded px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-[#d4af37] w-full sm:w-40"
                                 >
+                                  <option value="Unknown">Unknown</option>
                                   <option value="Present">Present</option>
                                   <option value="Missing">Missing</option>
                                   <option value="Needs Review">Needs Review</option>

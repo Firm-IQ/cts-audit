@@ -241,15 +241,19 @@ model AccountChecklistItem {
 }
 
 model DocumentType {
-  id           String               @id @default(uuid())
-  name         String               @unique
-  category     String
-  description  String?
-  active       Boolean              @default(true)
-  displayOrder Int                  @default(0)
-  createdAt    DateTime             @default(now())
-  updatedAt    DateTime             @updatedAt
-  requirements RequirementLibrary[]
+  id                  String               @id @default(uuid())
+  name                String               @unique
+  documentKey         String               @unique
+  category            String
+  description         String?
+  typicalAccountTypes String               @default("All")
+  critical            Boolean              @default(false)
+  active              Boolean              @default(true)
+  notes               String?
+  displayOrder        Int                  @default(0)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  requirements        RequirementLibrary[]
 }
 
 model RequirementLibrary {
@@ -302,4 +306,12 @@ model AccountType {
   displayOrder Int      @default(0)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+model CrmMapping {
+  id        String   @id @default(uuid())
+  crmType   String   @unique // e.g., "Redtail", "Wealthbox", "Salesforce", etc.
+  mapping   String   // Stringified JSON of column index/name mappings
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
