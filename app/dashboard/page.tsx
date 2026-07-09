@@ -26,7 +26,7 @@ export default async function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-[#0b1329] text-slate-100 flex flex-col">
-      <Navbar userName={session.name} email={session.email} />
+      <Navbar userName={session.name} email={session.email} role={session.role} />
       
       <main className="flex-1 p-6 md:p-8 max-w-7xl w-full mx-auto space-y-8">
         <DashboardClient initialAdvisors={JSON.parse(JSON.stringify(advisors))} />

@@ -13,6 +13,12 @@ function LoginFormContent() {
   const [loading, setLoading] = useState(false);
   const [callbackUrl, setCallbackUrl] = useState('/dashboard');
 
+  // First-time password setup state
+  const [mustSetPassword, setMustSetPassword] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [userName, setUserName] = useState('');
+
   useEffect(() => {
     const url = searchParams.get('callbackUrl');
     if (url) setCallbackUrl(url);
@@ -36,6 +42,13 @@ function LoginFormContent() {
         throw new Error(data.error || 'Login failed');
       }
 
+      if (data.mustSetPassword) {
+        setMustSetPassword(true);
+        setUserName(data.name || 'User');
+        setLoading(false);
+        return;
+      }
+
       router.push(callbackUrl);
       router.refresh();
     } catch (err: any) {
@@ -44,6 +57,100 @@ function LoginFormContent() {
       setLoading(false);
     }
   };
+
+  const handleSetupSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+
+    if (newPassword !== confirmPassword) {
+      setError('Passwords do not match');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email,
+          newPassword,
+          confirmPassword,
+          isSetup: true,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Password setup failed');
+      }
+
+      router.push(callbackUrl);
+      router.refresh();
+    } catch (err: any) {
+      setError(err.message || 'Something went wrong');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (mustSetPassword) {
+    return (
+      <Card className="border border-slate-700/60 shadow-2xl">
+        <CardHeader className="text-center">
+          <CardTitle>Initialize Account Password</CardTitle>
+          <CardDescription>
+            Welcome, <span className="font-bold text-[#d4af37]">{userName}</span>. Please choose a secure password to activate your account.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {error && (
+            <div className="mb-4 p-3 rounded bg-rose-950/40 border border-rose-500/30 text-rose-400 text-xs font-semibold">
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleSetupSubmit} className="space-y-4">
+            <div>
+              <Label htmlFor="newPassword">New Password</Label>
+              <Input
+                id="newPassword"
+                type="password"
+                placeholder="Choose new password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                required
+                disabled={loading}
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="confirmPassword">Confirm Password</Label>
+              <Input
+                id="confirmPassword"
+                type="password"
+                placeholder="Confirm new password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+                disabled={loading}
+              />
+            </div>
+
+            <Button
+              type="submit"
+              className="w-full mt-2"
+              disabled={loading}
+            >
+              {loading ? 'Configuring Security...' : 'Set Password & Login'}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className="border border-slate-700/60 shadow-2xl">

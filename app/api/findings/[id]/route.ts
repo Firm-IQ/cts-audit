@@ -33,6 +33,10 @@ export async function PUT(
       status,
       reviewerNotes,
       evidenceSummary,
+      priority,
+      assignedTo,
+      dueDate,
+      resolutionNotes,
     } = body;
 
     // Validate required fields
@@ -56,6 +60,10 @@ export async function PUT(
         status,
         reviewerNotes: reviewerNotes || '',
         evidenceSummary: evidenceSummary || '',
+        priority: priority || 'Normal',
+        assignedTo: assignedTo || 'Advisor Staff',
+        dueDate: dueDate ? new Date(dueDate) : null,
+        resolutionNotes: resolutionNotes || '',
       },
     });
 

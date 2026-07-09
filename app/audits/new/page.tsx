@@ -49,7 +49,7 @@ export default async function NewAssessmentPage(props: NewAssessmentPageProps) {
 
   return (
     <div className="min-h-screen bg-[#0b1329] text-slate-100 flex flex-col">
-      <Navbar userName={session.name} email={session.email} />
+      <Navbar userName={session.name} email={session.email} role={session.role} />
       
       <main className="flex-1 p-6 md:p-8 max-w-4xl w-full mx-auto">
         <AuditForm initialData={JSON.parse(JSON.stringify(initialData))} reviewerName={session.name || ''} />

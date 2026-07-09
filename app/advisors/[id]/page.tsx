@@ -19,7 +19,7 @@ export default async function AdvisorWorkspacePage(props: AdvisorPageProps) {
 
   const { id } = await props.params;
 
-  // Query advisor details including assessments (with findings), contacts, and journal entries sorted by date
+  // Query advisor details including assessments (with findings), contacts, and journal entries
   const advisor = await prisma.advisor.findUnique({
     where: { id },
     include: {
@@ -36,6 +36,21 @@ export default async function AdvisorWorkspacePage(props: AdvisorPageProps) {
       },
       journalEntries: {
         orderBy: { date: 'desc' }
+      },
+      householdRecords: {
+        orderBy: { name: 'asc' },
+        include: {
+          accounts: {
+            orderBy: { name: 'asc' },
+            include: {
+              checklistItems: {
+                include: {
+                  requirement: true
+                }
+              }
+            }
+          }
+        }
       }
     }
   });
@@ -44,12 +59,27 @@ export default async function AdvisorWorkspacePage(props: AdvisorPageProps) {
     notFound();
   }
 
+  // Fetch active requirement profiles with assignments (profileRequirements) to load scoring rules
+  const activeProfiles = await prisma.requirementProfile.findMany({
+    where: { active: true },
+    include: {
+      profileRequirements: {
+        include: {
+          requirement: true
+        }
+      }
+    }
+  });
+
   return (
     <div className="min-h-screen bg-[#0b1329] text-slate-100 flex flex-col">
-      <Navbar userName={session.name} email={session.email} />
+      <Navbar userName={session.name} email={session.email} role={session.role} />
       
       <main className="flex-1 p-6 md:p-8 max-w-7xl w-full mx-auto space-y-6">
-        <AdvisorWorkspaceClient advisor={JSON.parse(JSON.stringify(advisor))} />
+        <AdvisorWorkspaceClient 
+          advisor={JSON.parse(JSON.stringify(advisor))} 
+          activeProfiles={JSON.parse(JSON.stringify(activeProfiles))}
+        />
       </main>
     </div>
   );

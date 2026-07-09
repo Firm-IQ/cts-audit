@@ -3,6 +3,60 @@ const bcrypt = require('bcryptjs');
 
 const prisma = new PrismaClient();
 
+const checklistItems = [
+  // CLIENT INFORMATION
+  { key: 'client_addressCurrent', name: 'Address Current', category: 'Client Information', appliesToAccountTypes: 'All', required: true, critical: true, displayOrder: 1 },
+  { key: 'client_emailCurrent', name: 'Email Current', category: 'Client Information', appliesToAccountTypes: 'All', required: true, critical: true, displayOrder: 2 },
+  { key: 'client_phoneCurrent', name: 'Phone Current', category: 'Client Information', appliesToAccountTypes: 'All', required: true, critical: true, displayOrder: 3 },
+  { key: 'client_trustedContact', name: 'Trusted Contact', category: 'Client Information', appliesToAccountTypes: 'All', required: false, critical: false, displayOrder: 4 },
+  { key: 'client_relationshipsVerified', name: 'Household Relationships Verified', category: 'Client Information', appliesToAccountTypes: 'All', required: true, critical: false, displayOrder: 5 },
+  // KYC
+  { key: 'kyc_riskTolerance', name: 'Risk Tolerance Current', category: 'KYC', appliesToAccountTypes: 'All', required: true, critical: true, displayOrder: 6 },
+  { key: 'kyc_investmentObjectives', name: 'Investment Objectives Current', category: 'KYC', appliesToAccountTypes: 'All', required: true, critical: true, displayOrder: 7 },
+  { key: 'kyc_timeHorizon', name: 'Time Horizon', category: 'KYC', appliesToAccountTypes: 'All', required: true, critical: false, displayOrder: 8 },
+  { key: 'kyc_liquidityNeeds', name: 'Liquidity Needs', category: 'KYC', appliesToAccountTypes: 'All', required: true, critical: false, displayOrder: 9 },
+  { key: 'kyc_incomeNetWorth', name: 'Income / Net Worth Current', category: 'KYC', appliesToAccountTypes: 'All', required: true, critical: false, displayOrder: 10 },
+  { key: 'kyc_lastReview', name: 'Last Review Current', category: 'KYC', appliesToAccountTypes: 'All', required: true, critical: false, displayOrder: 11 },
+  // BANKING
+  { key: 'banking_achAuthorization', name: 'ACH Authorization', category: 'Banking', appliesToAccountTypes: 'All', required: false, critical: false, displayOrder: 12, documentTypeName: 'ACH Authorization' },
+  { key: 'banking_voidedCheck', name: 'Voided Check / Bank Verification', category: 'Banking', appliesToAccountTypes: 'All', required: false, critical: false, displayOrder: 13, documentTypeName: 'Voided Check' },
+  { key: 'banking_standingInstructions', name: 'Standing Instructions', category: 'Banking', appliesToAccountTypes: 'All', required: false, critical: false, displayOrder: 14 },
+  // ACCOUNT DOCUMENTS
+  { key: 'doc_advisoryAgreement', name: 'Advisory Agreement', category: 'Account Documents', appliesToAccountTypes: 'All', required: true, critical: true, displayOrder: 15 },
+  { key: 'doc_accountApplication', name: 'Account Application', category: 'Account Documents', appliesToAccountTypes: 'All', required: true, critical: true, displayOrder: 16 },
+  { key: 'doc_beneficiaryDesignation', name: 'Beneficiary Designation', category: 'Account Documents', appliesToAccountTypes: 'All', required: true, critical: true, displayOrder: 17, documentTypeName: 'Beneficiary Designation' },
+  { key: 'doc_transferRestrictions', name: 'Transfer Restrictions Reviewed', category: 'Account Documents', appliesToAccountTypes: 'All', required: false, critical: false, displayOrder: 18 },
+  // TRUST ACCOUNTS
+  { key: 'trust_certification', name: 'Trust Certification', category: 'Trust Accounts', appliesToAccountTypes: 'Trust', required: true, critical: false, displayOrder: 19, documentTypeName: 'Trust Certification' },
+  { key: 'trust_trusteePages', name: 'Trustee Pages', category: 'Trust Accounts', appliesToAccountTypes: 'Trust', required: true, critical: false, displayOrder: 20 },
+  { key: 'trust_successorTrustee', name: 'Successor Trustee', category: 'Trust Accounts', appliesToAccountTypes: 'Trust', required: false, critical: false, displayOrder: 21 },
+  { key: 'trust_taxId', name: 'Tax ID Verified', category: 'Trust Accounts', appliesToAccountTypes: 'Trust', required: true, critical: false, displayOrder: 22 },
+  // ENTITY ACCOUNTS
+  { key: 'entity_articles', name: 'Articles', category: 'Entity Accounts', appliesToAccountTypes: 'Entity', required: true, critical: false, displayOrder: 23 },
+  { key: 'entity_operatingAgreement', name: 'Operating Agreement', category: 'Entity Accounts', appliesToAccountTypes: 'Entity', required: true, critical: false, displayOrder: 24, documentTypeName: 'Operating Agreement' },
+  { key: 'entity_ein', name: 'EIN', category: 'Entity Accounts', appliesToAccountTypes: 'Entity', required: true, critical: false, displayOrder: 25 },
+  { key: 'entity_resolution', name: 'Corporate Resolution', category: 'Entity Accounts', appliesToAccountTypes: 'Entity', required: true, critical: false, displayOrder: 26, documentTypeName: 'Corporate Resolution' },
+  { key: 'entity_signers', name: 'Authorized Signers', category: 'Entity Accounts', appliesToAccountTypes: 'Entity', required: true, critical: false, displayOrder: 27 },
+  // ESTATE ACCOUNTS
+  { key: 'estate_deathCertificate', name: 'Death Certificate', category: 'Estate Accounts', appliesToAccountTypes: 'Estate', required: true, critical: false, displayOrder: 28, documentTypeName: 'Death Certificate' },
+  { key: 'estate_letters', name: 'Letters Testamentary', category: 'Estate Accounts', appliesToAccountTypes: 'Estate', required: true, critical: false, displayOrder: 29, documentTypeName: 'Letters Testamentary' },
+  { key: 'estate_executor', name: 'Executor Documentation', category: 'Estate Accounts', appliesToAccountTypes: 'Estate', required: true, critical: false, displayOrder: 30 },
+  // POWERS
+  { key: 'power_poa', name: 'Power of Attorney', category: 'Powers', appliesToAccountTypes: 'All', required: false, critical: false, displayOrder: 31, documentTypeName: 'Power of Attorney' },
+  { key: 'power_guardianship', name: 'Guardianship', category: 'Powers', appliesToAccountTypes: 'All', required: false, critical: false, displayOrder: 32 },
+  { key: 'power_conservatorship', name: 'Conservatorship', category: 'Powers', appliesToAccountTypes: 'All', required: false, critical: false, displayOrder: 33 },
+  // RETIREMENT
+  { key: 'retire_ira', name: 'IRA Documentation', category: 'Retirement', appliesToAccountTypes: 'IRA,Roth IRA,Inherited IRA,SEP IRA,SIMPLE IRA', required: true, critical: false, displayOrder: 34, documentTypeName: 'IRA Adoption Agreement' },
+  { key: 'retire_inheritedIra', name: 'Inherited IRA Documentation', category: 'Retirement', appliesToAccountTypes: 'Inherited IRA', required: true, critical: false, displayOrder: 35, documentTypeName: 'Inherited IRA Documentation' },
+  { key: 'retire_beneficiary', name: 'Beneficiary Review', category: 'Retirement', appliesToAccountTypes: 'IRA,Roth IRA,Inherited IRA,SEP IRA,SIMPLE IRA,401(k)', required: true, critical: false, displayOrder: 36 },
+  { key: 'retire_rmd', name: 'RMD Status', category: 'Retirement', appliesToAccountTypes: 'IRA,Roth IRA,Inherited IRA,SEP IRA,SIMPLE IRA,401(k)', required: false, critical: false, displayOrder: 37 },
+  // SPECIAL HOLDINGS
+  { key: 'special_annuities', name: 'Annuities', category: 'Special Holdings', appliesToAccountTypes: 'Annuity', required: false, critical: false, displayOrder: 38 },
+  { key: 'special_alts', name: 'Alternative Investments', category: 'Special Holdings', appliesToAccountTypes: 'Alternative Investment', required: false, critical: false, displayOrder: 39 },
+  { key: 'special_directBusiness', name: 'Direct Business', category: 'Special Holdings', appliesToAccountTypes: 'Direct Business', required: false, critical: false, displayOrder: 40 },
+  { key: 'special_restrictedAssets', name: 'Restricted Assets', category: 'Special Holdings', appliesToAccountTypes: 'All', required: false, critical: false, displayOrder: 41 },
+];
+
 function calculateReadinessScores(data) {
   const householdingVal = Math.min(10, Math.max(1, data.householdingQualityScore)) * 10;
   const duplicateRiskVal = (11 - Math.min(10, Math.max(1, data.duplicateRecordRiskScore))) * 10;
@@ -85,19 +139,125 @@ function calculateReadinessScores(data) {
 }
 
 async function main() {
-  const adminEmail = process.env.ADMIN_EMAIL || 'admin@cts.com';
-  const adminPassword = process.env.ADMIN_PASSWORD || 'adminpassword';
-  
   console.log('Seeding database...');
 
-  const hashedPassword = await bcrypt.hash(adminPassword, 10);
-  const user = await prisma.user.upsert({
-    where: { email: adminEmail },
-    update: { password: hashedPassword },
+  // 1. Seed DocumentType
+  console.log('Seeding DocumentTypes...');
+  const docTypes = [
+    { name: 'ACH Authorization', category: 'Banking', description: 'ACH Transfer authorization form', active: true, displayOrder: 1 },
+    { name: 'Voided Check', category: 'Banking', description: 'Voided check or bank verification letter', active: true, displayOrder: 2 },
+    { name: 'Trust Certification', category: 'Trust Accounts', description: 'Certification of Trust documentation', active: true, displayOrder: 3 },
+    { name: 'Beneficiary Designation', category: 'Account Documents', description: 'Beneficiary designation form', active: true, displayOrder: 4 },
+    { name: 'Power of Attorney', category: 'Powers', description: 'Power of Attorney documentation', active: true, displayOrder: 5 },
+    { name: 'Death Certificate', category: 'Estate Accounts', description: 'Certified copy of death certificate', active: true, displayOrder: 6 },
+    { name: 'Letters Testamentary', category: 'Estate Accounts', description: 'Letters testamentary or court letters', active: true, displayOrder: 7 },
+    { name: 'Operating Agreement', category: 'Entity Accounts', description: 'Operating agreement or bylaws', active: true, displayOrder: 8 },
+    { name: 'Corporate Resolution', category: 'Entity Accounts', description: 'Corporate authorizing resolution', active: true, displayOrder: 9 },
+    { name: 'IRA Adoption Agreement', category: 'Retirement', description: 'IRA Adoption agreement form', active: true, displayOrder: 10 },
+    { name: 'Inherited IRA Documentation', category: 'Retirement', description: 'Inherited IRA adopt/verification documents', active: true, displayOrder: 11 },
+  ];
+
+  const seededDocTypes = new Map();
+  for (const doc of docTypes) {
+    const dbDoc = await prisma.documentType.upsert({
+      where: { name: doc.name },
+      update: { category: doc.category, description: doc.description, active: doc.active, displayOrder: doc.displayOrder },
+      create: doc
+    });
+    seededDocTypes.set(doc.name, dbDoc);
+  }
+
+  // 2. Seed AccountType
+  console.log('Seeding AccountTypes...');
+  const accountTypesList = [
+    'Individual', 'Joint', 'Trust', 'IRA', 'Roth IRA', 'Inherited IRA', 'SEP IRA', 'SIMPLE IRA', '401(k)', '529', 'Estate', 'Entity', 'Annuity', 'Alternative Investment', 'Direct Business', 'Other'
+  ];
+
+  for (let idx = 0; idx < accountTypesList.length; idx++) {
+    const typeName = accountTypesList[idx];
+    await prisma.accountType.upsert({
+      where: { name: typeName },
+      update: { active: true, displayOrder: idx },
+      create: { name: typeName, description: `${typeName} Account Type`, active: true, displayOrder: idx }
+    });
+  }
+
+  // 3. Seed RequirementProfile: CTS Master Requirements
+  console.log('Seeding RequirementProfile...');
+  const masterProfile = await prisma.requirementProfile.upsert({
+    where: { name: 'CTS Master Requirements' },
+    update: {},
     create: {
-      email: adminEmail,
-      name: 'CTS Admin',
-      password: hashedPassword
+      name: 'CTS Master Requirements',
+      description: 'The master base audit profile mapping 41 standard requirements across client accounts.'
+    }
+  });
+
+  // 4. Seed RequirementLibrary and ProfileRequirement assignments
+  console.log('Seeding RequirementLibrary & profile requirements...');
+  for (const item of checklistItems) {
+    const docTypeConnect = [];
+    if (item.documentTypeName && seededDocTypes.has(item.documentTypeName)) {
+      const targetDoc = seededDocTypes.get(item.documentTypeName);
+      docTypeConnect.push({ id: targetDoc.id });
+    }
+
+    const dbReq = await prisma.requirementLibrary.upsert({
+      where: { id: item.key },
+      update: {
+        name: item.name,
+        category: item.category,
+        appliesToAccountTypes: item.appliesToAccountTypes,
+        required: item.required,
+        critical: item.critical,
+        displayOrder: item.displayOrder,
+        documentTypes: docTypeConnect.length > 0 ? { set: docTypeConnect } : undefined
+      },
+      create: {
+        id: item.key,
+        name: item.name,
+        description: `${item.name} requirements.`,
+        category: item.category,
+        appliesToAccountTypes: item.appliesToAccountTypes,
+        required: item.required,
+        critical: item.critical,
+        displayOrder: item.displayOrder,
+        documentTypes: docTypeConnect.length > 0 ? { connect: docTypeConnect } : undefined
+      }
+    });
+
+    await prisma.profileRequirement.upsert({
+      where: {
+        profileId_requirementId: {
+          profileId: masterProfile.id,
+          requirementId: dbReq.id
+        }
+      },
+      update: {
+        state: item.required ? 'Required' : 'Optional'
+      },
+      create: {
+        profileId: masterProfile.id,
+        requirementId: dbReq.id,
+        state: item.required ? 'Required' : 'Optional'
+      }
+    });
+  }
+
+  const user = await prisma.user.upsert({
+    where: { email: 'curt@gocontinuity.com' },
+    update: {
+      role: 'Super Admin',
+      active: true
+    },
+    create: {
+      email: 'curt@gocontinuity.com',
+      firstName: 'Curt',
+      lastName: 'Kloc',
+      role: 'Super Admin',
+      active: true,
+      password: '', // Empty password to initialize on first login
+      mustChangePassword: true,
     }
   });
 
@@ -435,6 +595,221 @@ Sole practitioner with very limited staff capacity. CRM is highly unorganized. M
       createdByUserId: user.id
     }
   });
+
+  console.log('Seeding households and accounts...');
+
+  const mockHouseholds = [
+    {
+      advisorId: advisor1.id,
+      name: 'The Robinson Family',
+      primaryClientName: 'Arthur Robinson',
+      secondaryClientName: 'Martha Robinson',
+      totalAum: 4.2,
+      revenue: 35000,
+      email: 'arthur.robinson@example.com',
+      phone: '555-1200',
+      address: '742 Evergreen Terrace, Springfield',
+      assignedConsultant: 'Jane Doe',
+      notes: 'Arthur is transitioning from an active corporate officer role. Keep eyes on their retirement distributions.',
+      readinessStatus: 'Minor Cleanup',
+      accounts: [
+        {
+          name: 'Arthur Robinson Rollover IRA',
+          type: 'IRA',
+          value: 1200000,
+          custodian: 'LPL',
+          registration: 'Traditional IRA',
+          notes: 'Standard Rollover.',
+          readinessStatus: 'Ready',
+          checklistStatus: {
+            client_addressCurrent: 'Present',
+            client_emailCurrent: 'Present',
+            client_phoneCurrent: 'Present',
+            kyc_riskTolerance: 'Present',
+            kyc_investmentObjectives: 'Present',
+            kyc_timeHorizon: 'Present',
+            doc_advisoryAgreement: 'Present',
+            doc_accountApplication: 'Present',
+            retire_ira: 'Present',
+          }
+        },
+        {
+          name: 'Robinson Joint Trust',
+          type: 'Trust',
+          value: 3000000,
+          custodian: 'LPL',
+          registration: 'Living Trust',
+          notes: 'Trust documents need certification verification.',
+          readinessStatus: 'Needs Review',
+          checklistStatus: {
+            client_addressCurrent: 'Present',
+            client_emailCurrent: 'Present',
+            client_phoneCurrent: 'Present',
+            kyc_riskTolerance: 'Present',
+            kyc_investmentObjectives: 'Present',
+            doc_advisoryAgreement: 'Present',
+            doc_accountApplication: 'Needs Review',
+            trust_certification: 'Missing',
+            trust_trusteePages: 'Needs Review',
+          }
+        }
+      ]
+    },
+    {
+      advisorId: advisor2.id,
+      name: 'Dr. Evelyn Martinez',
+      primaryClientName: 'Evelyn Martinez',
+      secondaryClientName: null,
+      totalAum: 1.8,
+      revenue: 16000,
+      email: 'e.martinez@healthmed.org',
+      phone: '555-8912',
+      address: '109 Medical Plaza, Boston, MA',
+      assignedConsultant: 'John Smith',
+      notes: 'Busy orthopedic surgeon. Hard to reach, email preferred.',
+      readinessStatus: 'Significant Cleanup',
+      accounts: [
+        {
+          name: 'Martinez Ortho LLC 401(k)',
+          type: '401(k)',
+          value: 1800000,
+          custodian: 'Ameriprise',
+          registration: 'Solo 401k',
+          notes: 'LLC operating agreements are missing signers page.',
+          readinessStatus: 'Missing Items',
+          checklistStatus: {
+            client_addressCurrent: 'Present',
+            client_emailCurrent: 'Present',
+            kyc_riskTolerance: 'Needs Review',
+            doc_advisoryAgreement: 'Missing',
+            entity_articles: 'Present',
+            entity_operatingAgreement: 'Missing',
+          }
+        }
+      ]
+    },
+    {
+      advisorId: advisor3.id,
+      name: 'Estate of Thomas Shelby',
+      primaryClientName: 'Arthur Shelby',
+      secondaryClientName: 'Ada Thorne',
+      totalAum: 2.5,
+      revenue: 22000,
+      email: 'arthur@shelbyco.uk',
+      phone: '555-0900',
+      address: 'Watery Lane, Birmingham',
+      assignedConsultant: 'Jane Doe',
+      notes: 'Complex estate account. Letters testamentary are old.',
+      readinessStatus: 'Not Ready',
+      accounts: [
+        {
+          name: 'Thomas Shelby Estate Account',
+          type: 'Estate',
+          value: 2500000,
+          custodian: 'Wells Fargo',
+          registration: 'Estate Account',
+          notes: 'Awaiting death certificate certified copy.',
+          readinessStatus: 'Not Ready',
+          checklistStatus: {
+            client_addressCurrent: 'Present',
+            estate_deathCertificate: 'Missing',
+            estate_letters: 'Needs Review',
+            estate_executor: 'Missing',
+          }
+        }
+      ]
+    }
+  ];
+
+  for (const hhData of mockHouseholds) {
+    const household = await prisma.household.create({
+      data: {
+        advisorId: hhData.advisorId,
+        name: hhData.name,
+        primaryClientName: hhData.primaryClientName,
+        secondaryClientName: hhData.secondaryClientName,
+        totalAum: hhData.totalAum,
+        revenue: hhData.revenue,
+        email: hhData.email,
+        phone: hhData.phone,
+        address: hhData.address,
+        assignedConsultant: hhData.assignedConsultant,
+        notes: hhData.notes,
+        readinessStatus: hhData.readinessStatus,
+      }
+    });
+
+    for (const accData of hhData.accounts) {
+      const account = await prisma.account.create({
+        data: {
+          householdId: household.id,
+          name: accData.name,
+          type: accData.type,
+          value: accData.value,
+          custodian: accData.custodian,
+          registration: accData.registration,
+          notes: accData.notes,
+          readinessStatus: accData.readinessStatus,
+        }
+      });
+
+      // Generate 41 checklist items
+      for (const item of checklistItems) {
+        const isAll = item.appliesToAccountTypes.toLowerCase() === 'all';
+        const appliesList = item.appliesToAccountTypes.split(',').map(s => s.trim().toLowerCase());
+        const isApplicable = isAll || appliesList.includes(accData.type.toLowerCase());
+
+        let itemStatus = 'Not Applicable';
+        if (isApplicable) {
+          itemStatus = accData.checklistStatus[item.key] || 'Not Reviewed';
+        }
+        
+        const checklistItem = await prisma.accountChecklistItem.create({
+          data: {
+            accountId: account.id,
+            itemKey: item.key,
+            itemName: item.name,
+            status: itemStatus,
+            notes: itemStatus !== 'Not Applicable' ? `${item.name} seeded state.` : '',
+            verifiedBy: itemStatus === 'Present' ? 'CTS Auditor' : '',
+            verifiedDate: itemStatus === 'Present' ? '2026-07-08' : '',
+            requirementId: item.key,
+          }
+        });
+
+        // If checklist item is Missing or Needs Review, auto-create a Finding!
+        if (itemStatus === 'Missing' || itemStatus === 'Needs Review') {
+          // Find latest assessment for this advisor
+          const assessments = await prisma.assessment.findMany({
+            where: { advisorId: hhData.advisorId },
+            orderBy: { createdAt: 'desc' }
+          });
+          const assessmentId = assessments[0]?.id;
+          
+          if (assessmentId) {
+            await prisma.finding.create({
+              data: {
+                assessmentId,
+                category: 'Documentation',
+                title: `${household.name} - ${account.name} - ${item.name}`,
+                description: `Seeded finding: Checklist item "${item.name}" is marked as "${itemStatus}".`,
+                severity: itemStatus === 'Missing' ? 'High' : 'Moderate',
+                priority: itemStatus === 'Missing' ? 'High' : 'Normal',
+                owner: 'Advisor',
+                assignedTo: 'Advisor Staff',
+                status: 'Open',
+                dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+                householdId: household.id,
+                accountId: account.id,
+                checklistItemId: checklistItem.id,
+                evidenceSummary: 'Seeded finding.'
+              }
+            });
+          }
+        }
+      }
+    }
+  }
 
   console.log('Seed completed successfully!');
 }

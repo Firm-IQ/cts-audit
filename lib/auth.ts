@@ -9,6 +9,7 @@ export interface JWTPayload {
   userId: string;
   email: string;
   name?: string | null;
+  role?: string | null;
   [key: string]: any;
 }
 

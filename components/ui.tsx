@@ -214,15 +214,28 @@ export function MetricCard({
 }
 
 // NAVBAR component
-export function Navbar({ userName, email }: { userName?: string | null; email?: string | null }) {
+export function Navbar({ userName, email, role }: { userName?: string | null; email?: string | null; role?: string | null }) {
   return (
     <header className="bg-[#1c2541] border-b border-slate-700/80 px-6 py-4 flex items-center justify-between no-print">
-      <Link href="/dashboard" className="flex items-center space-x-2">
-        <span className="text-[#d4af37] font-bold text-lg tracking-tight">Know Your Book™</span>
-        <span className="text-slate-400 font-normal text-xs border-l border-slate-600 pl-2">
-          Powered by CTS
-        </span>
-      </Link>
+      <div className="flex items-center space-x-8">
+        <Link href="/dashboard" className="flex items-center space-x-2 mr-2">
+          <span className="text-[#d4af37] font-bold text-lg tracking-tight">Know Your Book™</span>
+          <span className="text-slate-400 font-normal text-xs border-l border-slate-600 pl-2">
+            Powered by CTS
+          </span>
+        </Link>
+        <Link href="/dashboard" className="text-sm font-semibold text-slate-300 hover:text-[#d4af37] transition-colors">
+          Advisors
+        </Link>
+        <Link href="/households" className="text-sm font-semibold text-slate-300 hover:text-[#d4af37] transition-colors">
+          Households
+        </Link>
+        {role === 'Super Admin' && (
+          <Link href="/settings" className="text-sm font-semibold text-slate-300 hover:text-[#d4af37] transition-colors">
+            Settings
+          </Link>
+        )}
+      </div>
       
       <div className="flex items-center space-x-4">
         {userName && (

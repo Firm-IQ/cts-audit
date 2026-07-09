@@ -8,14 +8,19 @@ generator client {
 }
 
 model User {
-  id          String       @id @default(uuid())
-  email       String       @unique
-  password    String       // Hashed password
-  name        String?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  assessments Assessment[]
-  advisors    Advisor[]
+  id                 String       @id @default(uuid())
+  firstName          String?
+  lastName           String?
+  email              String       @unique
+  password           String       // Hashed password
+  role               String       @default("Read Only") // Super Admin, CTS Consultant, Read Only
+  active             Boolean      @default(true)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  lastLogin          DateTime?
+  mustChangePassword Boolean      @default(false)
+  assessments        Assessment[]
+  advisors           Advisor[]
 }
 
 model Advisor {
@@ -41,6 +46,7 @@ model Advisor {
   assessments           Assessment[]
   contacts              Contact[]
   journalEntries        JournalEntry[]
+  householdRecords      Household[]
   
   // Link to Creator User
   createdById           String?
@@ -161,4 +167,139 @@ model Finding {
   evidenceSummary String?
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
+
+  priority       String?    // Urgent, High, Normal, Low
+  assignedTo     String?    // CTS Consultant, Advisor, etc.
+  dueDate        DateTime?
+  resolutionNotes String?
+
+  householdId     String?
+  household       Household? @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  accountId       String?
+  account         Account?   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  checklistItemId String?
+  checklistItem   AccountChecklistItem? @relation(fields: [checklistItemId], references: [id], onDelete: Cascade)
+}
+
+model Household {
+  id                   String   @id @default(uuid())
+  advisorId            String
+  advisor              Advisor  @relation(fields: [advisorId], references: [id], onDelete: Cascade)
+  name                 String   // Household Name
+  primaryClientName    String
+  secondaryClientName  String?
+  totalAum             Float?   // In Millions USD or absolute
+  revenue              Float?
+  email                String?
+  phone                String?
+  address              String?
+  assignedConsultant   String?  // Assigned CTS Consultant
+  notes                String?
+  readinessStatus      String   @default("Not Reviewed") // Ready, Minor Cleanup, Significant Cleanup, Not Ready, Not Reviewed
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  accounts             Account[]
+  findings             Finding[]
+}
+
+model Account {
+  id                   String   @id @default(uuid())
+  householdId          String
+  household            Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  name                 String   // Account Name
+  type                 String   // Individual, Joint, Trust, IRA, Roth IRA, Inherited IRA, SEP IRA, SIMPLE IRA, 401(k), 529, Entity, Estate, Annuity, Alternative Investment, Direct Business, Other
+  value                Float?   // Account Value
+  custodian            String?
+  registration         String?
+  notes                String?
+  readinessStatus      String   @default("Not Reviewed") // Ready, Missing Items, Needs Review, Not Ready, Not Reviewed
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  checklistItems       AccountChecklistItem[]
+  findings             Finding[]
+}
+
+model AccountChecklistItem {
+  id            String              @id @default(uuid())
+  accountId     String
+  account       Account             @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  itemKey       String // Unique key mapped to RequirementLibrary
+  itemName      String // Copied from RequirementLibrary.name for convenience
+  status        String              @default("Not Applicable") // Present, Missing, Needs Review, Not Applicable
+  notes         String              @default("")
+  verifiedBy    String              @default("")
+  verifiedDate  String              @default("")
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  findings      Finding[]
+  requirementId String?
+  requirement   RequirementLibrary? @relation(fields: [requirementId], references: [id], onDelete: SetNull)
+
+  @@unique([accountId, itemKey])
+}
+
+model DocumentType {
+  id           String               @id @default(uuid())
+  name         String               @unique
+  category     String
+  description  String?
+  active       Boolean              @default(true)
+  displayOrder Int                  @default(0)
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  requirements RequirementLibrary[]
+}
+
+model RequirementLibrary {
+  id                    String               @id @default(uuid())
+  name                  String
+  description           String?
+  category              String
+  appliesToAccountTypes String // Comma-separated values, e.g., "IRA,Roth IRA" or "All"
+  required              Boolean              @default(true)
+  critical              Boolean              @default(false)
+  weight                Float                @default(1.0)
+  displayOrder          Int                  @default(0)
+  active                Boolean              @default(true)
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  documentTypes         DocumentType[]
+  profileRequirements   ProfileRequirement[]
+  checklistItems        AccountChecklistItem[]
+}
+
+model RequirementProfile {
+  id                  String               @id @default(uuid())
+  name                String               @unique
+  description         String?
+  active              Boolean              @default(true)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  profileRequirements ProfileRequirement[]
+}
+
+model ProfileRequirement {
+  id            String             @id @default(uuid())
+  profileId     String
+  profile       RequirementProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  requirementId String
+  requirement   RequirementLibrary @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  state         String             @default("Required") // Required, Optional, Hidden
+  overrideWeight Float?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  @@unique([profileId, requirementId])
+}
+
+model AccountType {
+  id           String   @id @default(uuid())
+  name         String   @unique
+  description  String?
+  active       Boolean  @default(true)
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
