@@ -13,6 +13,11 @@ export async function PUT(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const editorUser = await prisma.user.findUnique({
+      where: { id: session.userId }
+    });
+    const userFullName = editorUser ? `${editorUser.firstName || ''} ${editorUser.lastName || ''}`.trim() : session.name;
+
     const item = await prisma.accountChecklistItem.findUnique({
       where: { id },
       include: {
@@ -51,6 +56,41 @@ export async function PUT(
       },
     });
 
+    // Log checklist item state change activity
+    if (status === 'Present' && item.status !== 'Present') {
+      await prisma.activityLog.create({
+        data: {
+          advisorId: item.account.household.advisorId,
+          householdId: item.account.householdId,
+          accountId: item.accountId,
+          checklistItemId: id,
+          action: 'Verify',
+          objectAffected: 'Requirement',
+          description: `Requirement "${item.itemName}" verified by ${userFullName}`,
+          previousValue: item.status,
+          newValue: 'Present',
+          createdByUserId: session.userId,
+          createdByUserFullName: userFullName
+        }
+      });
+    } else if (status !== item.status) {
+      await prisma.activityLog.create({
+        data: {
+          advisorId: item.account.household.advisorId,
+          householdId: item.account.householdId,
+          accountId: item.accountId,
+          checklistItemId: id,
+          action: 'Update',
+          objectAffected: 'Requirement',
+          description: `Requirement "${item.itemName}" marked as ${status} by ${userFullName}`,
+          previousValue: item.status,
+          newValue: status,
+          createdByUserId: session.userId,
+          createdByUserFullName: userFullName
+        }
+      });
+    }
+
     // Find latest assessment for this advisor
     const advisor = item.account.household.advisor;
     let assessmentId = advisor.assessments[0]?.id;
@@ -66,7 +106,44 @@ export async function PUT(
       assessmentId = defaultAssessment.id;
     }
 
+    // Touch parent assessment to record the meaningful change and last updated user
+    if (assessmentId) {
+      await prisma.assessment.update({
+        where: { id: assessmentId },
+        data: {
+          lastUpdatedBy: userFullName,
+          updatedAt: new Date()
+        }
+      });
+    }
+
     if (status === 'Present' || status === 'Not Applicable') {
+      // Find open findings to log them before auto-resolving
+      const openFindings = await prisma.finding.findMany({
+        where: {
+          checklistItemId: id,
+          status: 'Open',
+        }
+      });
+      for (const f of openFindings) {
+        await prisma.activityLog.create({
+          data: {
+            advisorId: item.account.household.advisorId,
+            householdId: item.account.householdId,
+            accountId: item.accountId,
+            findingId: f.id,
+            checklistItemId: id,
+            action: 'Resolve',
+            objectAffected: 'Finding',
+            description: `Finding "${f.title}" auto-resolved (Checklist item marked as ${status})`,
+            previousValue: 'Open',
+            newValue: 'Resolved',
+            createdByUserId: session.userId,
+            createdByUserFullName: userFullName
+          }
+        });
+      }
+
       // Auto-resolve any open findings associated with this checklist item
       await prisma.finding.updateMany({
         where: {
@@ -89,7 +166,7 @@ export async function PUT(
       });
 
       if (!existingFinding) {
-        await prisma.finding.create({
+        const newFinding = await prisma.finding.create({
           data: {
             assessmentId,
             category: 'Documentation',
@@ -106,6 +183,24 @@ export async function PUT(
             checklistItemId: id,
             evidenceSummary: `Verified by: ${verifiedBy || 'N/A'}, Date: ${verifiedDate || 'N/A'}`,
           },
+        });
+
+        // Log Finding Creation Activity
+        await prisma.activityLog.create({
+          data: {
+            advisorId: item.account.household.advisorId,
+            householdId: item.account.householdId,
+            accountId: item.accountId,
+            findingId: newFinding.id,
+            checklistItemId: id,
+            action: 'Create',
+            objectAffected: 'Finding',
+            description: `Finding "${newFinding.title}" auto-created`,
+            previousValue: null,
+            newValue: 'Open',
+            createdByUserId: session.userId,
+            createdByUserFullName: userFullName
+          }
         });
       } else {
         await prisma.finding.update({

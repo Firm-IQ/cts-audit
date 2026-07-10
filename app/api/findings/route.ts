@@ -39,6 +39,11 @@ export async function POST(request: Request) {
       );
     }
 
+    const editorUser = await prisma.user.findUnique({
+      where: { id: session.userId }
+    });
+    const userFullName = editorUser ? `${editorUser.firstName || ''} ${editorUser.lastName || ''}`.trim() : session.name;
+
     const finding = await prisma.finding.create({
       data: {
         assessmentId,
@@ -58,6 +63,35 @@ export async function POST(request: Request) {
         resolutionNotes: resolutionNotes || '',
       },
     });
+
+    const assessment = await prisma.assessment.findUnique({
+      where: { id: assessmentId }
+    });
+
+    if (assessment) {
+      // Touch parent assessment
+      await prisma.assessment.update({
+        where: { id: assessmentId },
+        data: {
+          lastUpdatedBy: userFullName,
+          updatedAt: new Date()
+        }
+      });
+
+      // Log Activity
+      await prisma.activityLog.create({
+        data: {
+          advisorId: assessment.advisorId,
+          findingId: finding.id,
+          action: 'Create',
+          objectAffected: 'Finding',
+          description: `Finding "${title}" created by ${userFullName}`,
+          newValue: 'Open',
+          createdByUserId: session.userId,
+          createdByUserFullName: userFullName
+        }
+      });
+    }
 
     return NextResponse.json({ success: true, finding });
   } catch (error) {

@@ -47,6 +47,11 @@ export async function PUT(
       );
     }
 
+    const editorUser = await prisma.user.findUnique({
+      where: { id: session.userId }
+    });
+    const userFullName = editorUser ? `${editorUser.firstName || ''} ${editorUser.lastName || ''}`.trim() : session.name;
+
     const updatedFinding = await prisma.finding.update({
       where: { id },
       data: {
@@ -66,6 +71,50 @@ export async function PUT(
         resolutionNotes: resolutionNotes || '',
       },
     });
+
+    // Touch parent assessment
+    await prisma.assessment.update({
+      where: { id: existingFinding.assessmentId },
+      data: {
+        lastUpdatedBy: userFullName,
+        updatedAt: new Date()
+      }
+    });
+
+    // Log Activity
+    if (status !== existingFinding.status) {
+      await prisma.activityLog.create({
+        data: {
+          advisorId: updatedFinding.assessment.advisorId, // wait, updatedFinding does not include assessment in the type?
+          // Let's get advisorId from existingFinding. Let's look up assessment first!
+          advisorId: (await prisma.assessment.findUnique({ where: { id: existingFinding.assessmentId } }))?.advisorId || '',
+          householdId: existingFinding.householdId,
+          accountId: existingFinding.accountId,
+          findingId: id,
+          action: status === 'Resolved' || status === 'Verified' ? 'Resolve' : 'Update',
+          objectAffected: 'Finding',
+          description: `Finding "${title}" marked as ${status} by ${userFullName}`,
+          previousValue: existingFinding.status,
+          newValue: status,
+          createdByUserId: session.userId,
+          createdByUserFullName: userFullName
+        }
+      });
+    } else {
+      await prisma.activityLog.create({
+        data: {
+          advisorId: (await prisma.assessment.findUnique({ where: { id: existingFinding.assessmentId } }))?.advisorId || '',
+          householdId: existingFinding.householdId,
+          accountId: existingFinding.accountId,
+          findingId: id,
+          action: 'Update',
+          objectAffected: 'Finding',
+          description: `Finding "${title}" updated by ${userFullName}`,
+          createdByUserId: session.userId,
+          createdByUserFullName: userFullName
+        }
+      });
+    }
 
     return NextResponse.json({ success: true, finding: updatedFinding });
   } catch (error) {
@@ -95,6 +144,36 @@ export async function DELETE(
     if (!existingFinding) {
       return NextResponse.json({ error: 'Finding not found' }, { status: 404 });
     }
+
+    const editorUser = await prisma.user.findUnique({
+      where: { id: session.userId }
+    });
+    const userFullName = editorUser ? `${editorUser.firstName || ''} ${editorUser.lastName || ''}`.trim() : session.name;
+
+    const advisorId = (await prisma.assessment.findUnique({ where: { id: existingFinding.assessmentId } }))?.advisorId || '';
+
+    // Touch parent assessment
+    await prisma.assessment.update({
+      where: { id: existingFinding.assessmentId },
+      data: {
+        lastUpdatedBy: userFullName,
+        updatedAt: new Date()
+      }
+    });
+
+    // Log Activity
+    await prisma.activityLog.create({
+      data: {
+        advisorId,
+        householdId: existingFinding.householdId,
+        accountId: existingFinding.accountId,
+        action: 'Delete',
+        objectAffected: 'Finding',
+        description: `Finding "${existingFinding.title}" deleted by ${userFullName}`,
+        createdByUserId: session.userId,
+        createdByUserFullName: userFullName
+      }
+    });
 
     await prisma.finding.delete({
       where: { id },

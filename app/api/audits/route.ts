@@ -176,15 +176,35 @@ export async function POST(request: Request) {
       });
     }
 
+    const creatorUser = await prisma.user.findUnique({
+      where: { id: session.userId }
+    });
+    const userFullName = creatorUser ? `${creatorUser.firstName || ''} ${creatorUser.lastName || ''}`.trim() : session.name;
+
     // Save Assessment to Database
+    const { protocolStatus: _, ...scoreInputsForDb } = scoreInputs;
     const assessment = await prisma.assessment.create({
       data: {
         advisorId,
         notes,
-        ...scoreInputs,
+        ...scoreInputsForDb,
         ...calculatedScores,
         createdByUserId: session.userId,
+        lastUpdatedBy: userFullName
       },
+    });
+
+    // Log Recalculate Score Activity
+    await prisma.activityLog.create({
+      data: {
+        advisorId,
+        action: 'Recalculate',
+        objectAffected: 'Score',
+        description: `Readiness score initially calculated: ${calculatedScores.overallReadinessScore}% by ${userFullName}`,
+        newValue: `${calculatedScores.overallReadinessScore}%`,
+        createdByUserId: session.userId,
+        createdByUserFullName: userFullName
+      }
     });
 
     await autoCreateFindingsForAssessment(assessment.id, notes);

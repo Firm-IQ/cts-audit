@@ -43,6 +43,7 @@ export async function PUT(
       staffCount,
       crm,
       notes,
+      currentPhase,
       
       // Client Data
       emailCompletenessPercent,
@@ -91,6 +92,11 @@ export async function PUT(
         { status: 400 }
       );
     }
+
+    const editorUser = await prisma.user.findUnique({
+      where: { id: session.userId }
+    });
+    const userFullName = editorUser ? `${editorUser.firstName || ''} ${editorUser.lastName || ''}`.trim() : session.name;
 
     // Prepare inputs for scoring calculation
     const scoreInputs = {
@@ -160,8 +166,42 @@ export async function PUT(
         notes,
         ...scoreInputs,
         ...calculatedScores,
+        currentPhase: currentPhase || existingAssessment.currentPhase,
+        lastUpdatedBy: userFullName
       },
     });
+
+    // Track Phase Change Activity
+    if (currentPhase && currentPhase !== existingAssessment.currentPhase) {
+      await prisma.activityLog.create({
+        data: {
+          advisorId: existingAssessment.advisorId,
+          action: 'Update',
+          objectAffected: 'Phase',
+          description: `Assessment phase changed from "${existingAssessment.currentPhase}" to "${currentPhase}" by ${userFullName}`,
+          previousValue: existingAssessment.currentPhase,
+          newValue: currentPhase,
+          createdByUserId: session.userId,
+          createdByUserFullName: userFullName
+        }
+      });
+    }
+
+    // Track Score Recalculation Activity
+    if (calculatedScores.overallReadinessScore !== existingAssessment.overallReadinessScore) {
+      await prisma.activityLog.create({
+        data: {
+          advisorId: existingAssessment.advisorId,
+          action: 'Recalculate',
+          objectAffected: 'Score',
+          description: `Readiness score recalculated: ${existingAssessment.overallReadinessScore}% → ${calculatedScores.overallReadinessScore}% by ${userFullName}`,
+          previousValue: `${existingAssessment.overallReadinessScore}%`,
+          newValue: `${calculatedScores.overallReadinessScore}%`,
+          createdByUserId: session.userId,
+          createdByUserFullName: userFullName
+        }
+      });
+    }
 
     await autoCreateFindingsForAssessment(updatedAssessment.id, notes);
 

@@ -154,6 +154,10 @@ interface Advisor {
   contacts: Contact[];
   journalEntries: JournalEntry[];
   householdRecords: Household[];
+  reportToken: string | null;
+  reportEnabled: boolean;
+  reportLastViewed: string | null;
+  initialScore: number | null;
 }
 
 const parseNotesField = (notesText: string | null) => {
@@ -353,6 +357,199 @@ export default function AdvisorWorkspaceClient({
   const [contacts, setContacts] = useState<Contact[]>(advisor.contacts);
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>(advisor.journalEntries);
   const [assessments, setAssessments] = useState<Assessment[]>(advisor.assessments);
+
+  // Live Report Access states
+  const [reportToken, setReportToken] = useState<string | null>(advisor.reportToken || null);
+  const [reportEnabled, setReportEnabled] = useState<boolean>(advisor.reportEnabled ?? true);
+  const [reportLastViewed, setReportLastViewed] = useState<string | null>(advisor.reportLastViewed || null);
+
+  const handleToggleReportAccess = async () => {
+    try {
+      const response = await fetch(`/api/advisors/${advisor.id}/report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'toggle', enabled: !reportEnabled })
+      });
+      const data = await response.json();
+      if (data.success) {
+        setReportEnabled(data.reportEnabled);
+      } else {
+        alert(data.error || 'Failed to toggle access.');
+      }
+    } catch (err: any) {
+      alert('Error toggling access.');
+    }
+  };
+
+  const handleRegenerateReportToken = async () => {
+    try {
+      const response = await fetch(`/api/advisors/${advisor.id}/report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'regenerate' })
+      });
+      const data = await response.json();
+      if (data.success) {
+        setReportToken(data.reportToken);
+        setReportEnabled(data.reportEnabled);
+      } else {
+        alert(data.error || 'Failed to generate link.');
+      }
+    } catch (err: any) {
+      alert('Error generating link.');
+    }
+  };
+
+  // Session User State
+  const [currentUser, setCurrentUser] = useState<any>(null);
+
+  // Notes & Activity States
+  const [notesList, setNotesList] = useState<any[]>([]);
+  const [activitiesList, setActivitiesList] = useState<any[]>([]);
+  const [expandedChecklistNotesId, setExpandedChecklistNotesId] = useState<string | null>(null);
+  
+  // Note Form States (maps of keyed states for multiple notes panels)
+  const [noteInputs, setNoteInputs] = useState<Record<string, { body: string; type: string; visibility: string }>>({});
+  
+  // Note Editing States
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [editingNoteBody, setEditingNoteBody] = useState<string>('');
+  const [editingNoteType, setEditingNoteType] = useState<string>('General');
+  const [editingNoteVisibility, setEditingNoteVisibility] = useState<string>('Internal CTS Only');
+
+  // Filters for notes panels
+  const [noteTypeFilter, setNoteTypeFilter] = useState<string>('All');
+  const [noteVisibilityFilter, setNoteVisibilityFilter] = useState<string>('All');
+
+  const fetchNotes = async () => {
+    try {
+      const res = await fetch(`/api/notes?advisorId=${advisor.id}`);
+      const data = await res.json();
+      if (Array.isArray(data)) setNotesList(data);
+    } catch (err) {
+      console.error('Error loading notes:', err);
+    }
+  };
+
+  const fetchActivities = async () => {
+    try {
+      const res = await fetch(`/api/advisors/${advisor.id}/activities`);
+      const data = await res.json();
+      if (Array.isArray(data)) setActivitiesList(data);
+    } catch (err) {
+      console.error('Error loading activities:', err);
+    }
+  };
+
+  React.useEffect(() => {
+    const fetchSession = async () => {
+      try {
+        const res = await fetch('/api/auth/session');
+        const data = await res.json();
+        if (data.session) setCurrentUser(data.session);
+      } catch (err) {
+        console.error('Error loading session:', err);
+      }
+    };
+
+    fetchSession();
+    fetchNotes();
+    fetchActivities();
+  }, [advisor.id]);
+
+  const handleAddNote = async (opts: {
+    householdId?: string;
+    accountId?: string;
+    findingId?: string;
+    checklistItemId?: string;
+  }) => {
+    const key = `${opts.householdId || ''}-${opts.accountId || ''}-${opts.findingId || ''}-${opts.checklistItemId || ''}`;
+    const input = noteInputs[key] || { body: '', type: 'General', visibility: 'Internal CTS Only' };
+    if (!input.body.trim()) return alert('Note body cannot be empty.');
+
+    try {
+      const response = await fetch('/api/notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          advisorId: advisor.id,
+          householdId: opts.householdId,
+          accountId: opts.accountId,
+          findingId: opts.findingId,
+          checklistItemId: opts.checklistItemId,
+          noteType: input.type,
+          noteBody: input.body,
+          visibility: input.visibility
+        })
+      });
+      const newNote = await response.json();
+      if (newNote.error) {
+        alert(newNote.error);
+      } else {
+        setNotesList(prev => [newNote, ...prev]);
+        setNoteInputs(prev => ({
+          ...prev,
+          [key]: { body: '', type: 'General', visibility: 'Internal CTS Only' }
+        }));
+        fetchActivities();
+      }
+    } catch (err) {
+      alert('Error adding note.');
+    }
+  };
+
+  const handleStartEditNote = (note: any) => {
+    setEditingNoteId(note.id);
+    setEditingNoteBody(note.noteBody);
+    setEditingNoteType(note.noteType);
+    setEditingNoteVisibility(note.visibility);
+  };
+
+  const handleSaveEditNote = async () => {
+    if (!editingNoteBody.trim()) return alert('Note body cannot be empty.');
+    try {
+      const response = await fetch(`/api/notes/${editingNoteId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          noteBody: editingNoteBody,
+          noteType: editingNoteType,
+          visibility: editingNoteVisibility
+        })
+      });
+      const updatedNote = await response.json();
+      if (updatedNote.error) {
+        alert(updatedNote.error);
+      } else {
+        setNotesList(prev => prev.map(n => n.id === editingNoteId ? updatedNote : n));
+        setEditingNoteId(null);
+        fetchActivities();
+      }
+    } catch (err) {
+      alert('Error editing note.');
+    }
+  };
+
+  const handleDeleteNote = async (noteId: string, permanent: boolean = false) => {
+    const confirmMsg = permanent 
+      ? 'Are you sure you want to PERMANENTLY delete this note? This action is irreversible.'
+      : 'Are you sure you want to delete this note?';
+    if (!confirm(confirmMsg)) return;
+    try {
+      const response = await fetch(`/api/notes/${noteId}?permanent=${permanent}`, {
+        method: 'DELETE'
+      });
+      const data = await response.json();
+      if (data.error) {
+        alert(data.error);
+      } else {
+        setNotesList(prev => prev.filter(n => n.id !== noteId));
+        fetchActivities();
+      }
+    } catch (err) {
+      alert('Error deleting note.');
+    }
+  };
 
   // Findings selection state
   const [selectedAssessmentId, setSelectedAssessmentId] = useState<string>(
@@ -1247,6 +1444,257 @@ export default function AdvisorWorkspaceClient({
     }
   };
 
+  const renderNotesPanel = (opts: {
+    householdId?: string;
+    accountId?: string;
+    findingId?: string;
+    checklistItemId?: string;
+    title?: string;
+  }) => {
+    const key = `${opts.householdId || ''}-${opts.accountId || ''}-${opts.findingId || ''}-${opts.checklistItemId || ''}`;
+    const input = noteInputs[key] || { body: '', type: 'General', visibility: 'Internal CTS Only' };
+
+    const setInput = (val: Partial<{ body: string; type: string; visibility: string }>) => {
+      setNoteInputs(prev => ({
+        ...prev,
+        [key]: {
+          ...(prev[key] || { body: '', type: 'General', visibility: 'Internal CTS Only' }),
+          ...val
+        }
+      }));
+    };
+
+    const filteredNotes = notesList.filter(n => {
+      if (opts.householdId && n.householdId !== opts.householdId) return false;
+      if (opts.accountId && n.accountId !== opts.accountId) return false;
+      if (opts.findingId && n.findingId !== opts.findingId) return false;
+      if (opts.checklistItemId && n.checklistItemId !== opts.checklistItemId) return false;
+      
+      if (!opts.householdId && !opts.accountId && !opts.findingId && !opts.checklistItemId) {
+        if (n.householdId || n.accountId || n.findingId || n.checklistItemId) return false;
+      }
+
+      if (noteTypeFilter !== 'All' && n.noteType !== noteTypeFilter) return false;
+      if (noteVisibilityFilter !== 'All' && n.visibility !== noteVisibilityFilter) return false;
+
+      return true;
+    });
+
+    const noteTypes = [
+      'General',
+      'Advisor Conversation',
+      'Staff Conversation',
+      'Document Update',
+      'Requirement Review',
+      'Finding Update',
+      'Internal Decision',
+      'Follow-Up',
+      'Other'
+    ];
+
+    const visibilities = [
+      'Internal CTS Only',
+      'Advisor Report Visible'
+    ];
+
+    return (
+      <Card className="h-fit">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-bold text-slate-200">
+            {opts.title || 'Consulting Notes'}
+          </CardTitle>
+          <CardDescription className="text-xs">
+            Add notes and conversations visible internally or on the live report.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-3 bg-slate-900/40 p-4 rounded-lg border border-slate-800">
+            <textarea
+              placeholder="Add a consulting note..."
+              value={input.body}
+              onChange={(e) => setInput({ body: e.target.value })}
+              rows={3}
+              className="w-full bg-slate-950 border border-slate-850 text-xs text-slate-200 px-3 py-2 rounded focus:outline-none focus:border-[#d4af37]/50"
+            />
+            <div className="flex flex-col sm:flex-row gap-2 justify-between">
+              <div className="flex gap-2">
+                <select
+                  value={input.type}
+                  onChange={(e) => setInput({ type: e.target.value })}
+                  className="bg-slate-950 border border-slate-800 text-[10px] font-bold text-slate-300 px-2 py-1.5 rounded focus:outline-none"
+                >
+                  {noteTypes.map(t => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+                <select
+                  value={input.visibility}
+                  onChange={(e) => setInput({ visibility: e.target.value })}
+                  className="bg-slate-950 border border-slate-800 text-[10px] font-bold text-slate-300 px-2 py-1.5 rounded focus:outline-none"
+                >
+                  {visibilities.map(v => (
+                    <option key={v} value={v}>{v}</option>
+                  ))}
+                </select>
+              </div>
+              <Button
+                variant="primary"
+                size="sm"
+                className="text-xs py-1"
+                onClick={() => handleAddNote(opts)}
+              >
+                Add Note
+              </Button>
+            </div>
+          </div>
+
+          <div className="flex gap-2 text-[10px] font-bold text-slate-400 pb-2 border-b border-slate-800/80">
+            <span>Filter Notes:</span>
+            <select
+              value={noteTypeFilter}
+              onChange={(e) => setNoteTypeFilter(e.target.value)}
+              className="bg-transparent border-none text-[10px] text-slate-300 font-bold focus:outline-none cursor-pointer"
+            >
+              <option value="All">All Types</option>
+              {noteTypes.map(t => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+            <span>|</span>
+            <select
+              value={noteVisibilityFilter}
+              onChange={(e) => setNoteVisibilityFilter(e.target.value)}
+              className="bg-transparent border-none text-[10px] text-slate-300 font-bold focus:outline-none cursor-pointer"
+            >
+              <option value="All">All Visibilities</option>
+              {visibilities.map(v => (
+                <option key={v} value={v}>{v}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-3.5 max-h-[350px] overflow-y-auto pr-1">
+            {filteredNotes.map((note) => {
+              const isEditing = editingNoteId === note.id;
+              const isCreator = note.createdByUserId === currentUser?.userId;
+              const isAdmin = currentUser?.role === 'Super Admin';
+
+              return (
+                <div key={note.id} className="p-3 bg-slate-900/10 border border-slate-850 rounded-lg space-y-2 text-xs">
+                  {isEditing ? (
+                    <div className="space-y-2">
+                      <textarea
+                        value={editingNoteBody}
+                        onChange={(e) => setEditingNoteBody(e.target.value)}
+                        rows={2}
+                        className="w-full bg-slate-950 border border-slate-800 text-xs text-slate-200 px-3 py-2 rounded"
+                      />
+                      <div className="flex justify-between items-center gap-2">
+                        <div className="flex gap-2">
+                          <select
+                            value={editingNoteType}
+                            onChange={(e) => setEditingNoteType(e.target.value)}
+                            className="bg-slate-950 border border-slate-800 text-[10px] text-slate-300 px-2 py-1 rounded"
+                          >
+                            {noteTypes.map(t => (
+                              <option key={t} value={t}>{t}</option>
+                            ))}
+                          </select>
+                          <select
+                            value={editingNoteVisibility}
+                            onChange={(e) => setEditingNoteVisibility(e.target.value)}
+                            className="bg-slate-950 border border-slate-800 text-[10px] text-slate-300 px-2 py-1 rounded"
+                          >
+                            {visibilities.map(v => (
+                              <option key={v} value={v}>{v}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="sm" className="text-[10px] h-6 py-0.5 px-2" onClick={() => setEditingNoteId(null)}>
+                            Cancel
+                          </Button>
+                          <Button variant="primary" size="sm" className="text-[10px] h-6 py-0.5 px-2" onClick={handleSaveEditNote}>
+                            Save
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex justify-between items-start gap-4">
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="font-extrabold text-slate-200 text-xs">
+                              {note.createdBy ? `${note.createdBy.firstName || ''} ${note.createdBy.lastName || ''}`.trim() : 'Unknown'}
+                            </span>
+                            <span className="px-1.5 py-0.2 rounded text-[8px] font-bold bg-[#d4af37]/10 text-[#d4af37] border border-[#d4af37]/20">
+                              {note.noteType}
+                            </span>
+                            <span className={`px-1.5 py-0.2 rounded text-[8px] font-bold ${
+                              note.visibility === 'Internal CTS Only' 
+                                ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' 
+                                : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                            }`}>
+                              {note.visibility === 'Internal CTS Only' ? 'Internal Only' : 'Report Visible'}
+                            </span>
+                          </div>
+                          <div className="text-[9px] text-slate-500 font-semibold flex items-center gap-1">
+                            <Clock size={10} />
+                            {new Date(note.createdAt).toLocaleString()}
+                            {note.editedAt && (
+                              <span className="italic text-slate-600">
+                                (Edited by {note.editedBy ? `${note.editedBy.firstName || ''} ${note.editedBy.lastName || ''}`.trim() : 'Unknown'} on {new Date(note.editedAt).toLocaleDateString()})
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex gap-1 shrink-0">
+                          {(isCreator || isAdmin) && (
+                            <>
+                              <button 
+                                onClick={() => handleStartEditNote(note)}
+                                className="text-slate-500 hover:text-slate-200 p-0.5"
+                                title="Edit Note"
+                              >
+                                <Edit size={12} />
+                              </button>
+                              <button 
+                                onClick={() => handleDeleteNote(note.id, false)}
+                                className="text-rose-400/60 hover:text-rose-400 p-0.5"
+                                title="Delete Note"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </>
+                          )}
+                          {isAdmin && (
+                            <button 
+                              onClick={() => handleDeleteNote(note.id, true)}
+                              className="text-rose-600/60 hover:text-rose-600 p-0.5"
+                              title="Permanently Delete Note"
+                            >
+                              <Lock size={12} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-slate-300 leading-relaxed break-words whitespace-pre-wrap">{note.noteBody}</p>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+            {filteredNotes.length === 0 && (
+              <p className="text-center py-6 text-xs text-slate-500 italic">No notes logged in this category.</p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
   const toggleHouseholdExpanded = (hhId: string) => {
     setExpandedHouseholds(prev => ({
       ...prev,
@@ -1408,6 +1856,9 @@ export default function AdvisorWorkspaceClient({
                 </CardContent>
               </Card>
 
+              {/* Practice General consulting notes */}
+              {renderNotesPanel({ title: 'Practice Consulting Notes & Follow-Ups' })}
+
               {/* RECENT JOURNAL ENTRIES PANEL */}
               <Card>
                 <CardHeader>
@@ -1450,28 +1901,107 @@ export default function AdvisorWorkspaceClient({
               </Card>
             </div>
 
-            <Card className="h-fit">
-              <CardHeader>
-                <CardTitle>Transition Information</CardTitle>
-                <CardDescription>Affiliation histories and reasons for transitioning.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4 text-sm">
-                <div>
-                  <span className="text-slate-400 font-medium block">Years in Business:</span>
-                  <span className="text-slate-200 font-semibold block mt-0.5">{advisor.staffCount ? `${advisor.staffCount} Staff Members` : ''}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 font-medium block">Expected Timeline:</span>
-                  <span className="text-slate-200 font-semibold block mt-0.5">{parsedData.expectedTransitionTimeline}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400 font-medium block">Transition Reasons:</span>
-                  <p className="text-xs text-slate-300 bg-slate-900/40 border border-slate-800 p-3 rounded leading-relaxed mt-1.5 whitespace-pre-line">
-                    {parsedData.reasonForTransition || 'No reason specified'}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
+            <div className="space-y-6">
+              <Card className="h-fit border-[#d4af37]/30">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-[#d4af37]">
+                    <FileText size={18} />
+                    Live Readiness Report
+                  </CardTitle>
+                  <CardDescription>Share a secure, live-updating read-only report link with the advisor.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 font-medium">Link Status:</span>
+                    {reportToken && reportEnabled ? (
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Access Active</span>
+                    ) : (
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20">Access Disabled</span>
+                    )}
+                  </div>
+
+                  {reportToken ? (
+                    <div className="space-y-2">
+                      <span className="text-slate-400 font-medium block">Secure Access Link:</span>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          readOnly
+                          value={typeof window !== 'undefined' ? `${window.location.origin}/reports/${reportToken}` : `/reports/${reportToken}`}
+                          className="bg-slate-900/60 border border-slate-800 text-slate-300 text-xs px-3 py-2 rounded flex-1 focus:outline-none"
+                        />
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => {
+                            if (typeof window !== 'undefined') {
+                              const url = `${window.location.origin}/reports/${reportToken}`;
+                              navigator.clipboard.writeText(url);
+                              alert('Report URL copied to clipboard!');
+                            }
+                          }}
+                        >
+                          Copy
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-500 italic">No access link generated yet.</p>
+                  )}
+
+                  {reportLastViewed && (
+                    <div className="text-[10px] text-slate-500 font-semibold flex items-center gap-1">
+                      <Clock size={12} />
+                      Last Viewed: {new Date(reportLastViewed).toLocaleString()}
+                    </div>
+                  )}
+
+                  <div className="flex flex-col gap-2 pt-2 border-t border-slate-800">
+                    {reportToken && (
+                      <Button
+                        variant={reportEnabled ? "danger" : "primary"}
+                        size="sm"
+                        className="w-full text-xs font-bold"
+                        onClick={handleToggleReportAccess}
+                      >
+                        {reportEnabled ? 'Disable Access Link' : 'Enable Access Link'}
+                      </Button>
+                    )}
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="w-full text-xs font-bold"
+                      onClick={handleRegenerateReportToken}
+                    >
+                      {reportToken ? 'Regenerate Access Link' : 'Generate Access Link'}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="h-fit">
+                <CardHeader>
+                  <CardTitle>Transition Information</CardTitle>
+                  <CardDescription>Affiliation histories and reasons for transitioning.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4 text-sm">
+                  <div>
+                    <span className="text-slate-400 font-medium block">Years in Business:</span>
+                    <span className="text-slate-200 font-semibold block mt-0.5">{advisor.staffCount ? `${advisor.staffCount} Staff Members` : ''}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 font-medium block">Expected Timeline:</span>
+                    <span className="text-slate-200 font-semibold block mt-0.5">{parsedData.expectedTransitionTimeline}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 font-medium block">Transition Reasons:</span>
+                    <p className="text-xs text-slate-300 bg-slate-900/40 border border-slate-800 p-3 rounded leading-relaxed mt-1.5 whitespace-pre-line">
+                      {parsedData.reasonForTransition || 'No reason specified'}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           </div>
         )}
 
@@ -1978,11 +2508,77 @@ export default function AdvisorWorkspaceClient({
         {activeTab === 'timeline' && (
           <Card>
             <CardHeader>
-              <CardTitle>Transition Timeline</CardTitle>
-              <CardDescription>Transition milestone trackers and calendar logs.</CardDescription>
+              <CardTitle className="flex items-center gap-2">
+                <Clock size={20} className="text-[#d4af37]" />
+                Chronological Activity Timeline
+              </CardTitle>
+              <CardDescription>
+                Detailed audit trail of all workspace actions, requirement verifications, and score updates.
+              </CardDescription>
             </CardHeader>
-            <CardContent className="py-12 text-center text-slate-500 italic">
-              Timeline tracker workspace is coming soon.
+            <CardContent className="p-6">
+              {activitiesList.length > 0 ? (
+                <div className="relative border-l border-slate-800 ml-4 space-y-6">
+                  {activitiesList.map((act) => {
+                    let actionColor = 'bg-blue-500/20 text-blue-400 border-blue-500/30';
+                    if (act.action === 'Verify') actionColor = 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
+                    else if (act.action === 'Resolve') actionColor = 'bg-teal-500/20 text-teal-400 border-teal-500/30';
+                    else if (act.action === 'Delete') actionColor = 'bg-rose-500/20 text-rose-400 border-rose-500/30';
+                    else if (act.action === 'Create') actionColor = 'bg-green-500/20 text-green-400 border-green-500/30';
+                    else if (act.action === 'Recalculate') actionColor = 'bg-purple-500/20 text-purple-400 border-purple-500/30';
+
+                    return (
+                      <div key={act.id} className="relative pl-6 animate-fadeIn">
+                        <div className="absolute -left-1.5 top-1.5 w-3 h-3 rounded-full bg-slate-800 border-2 border-[#d4af37]" />
+                        
+                        <div className="bg-slate-900/30 border border-slate-850 p-4 rounded-lg hover:border-slate-800 transition-colors space-y-2">
+                          <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge variant="neutral" className={`text-[8px] font-bold py-0.5 px-1.5 uppercase ${actionColor}`}>
+                                {act.action}
+                              </Badge>
+                              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                                {act.objectAffected}
+                              </span>
+                              <span className="text-xs text-slate-400">•</span>
+                              <span className="text-xs font-bold text-slate-300">
+                                {act.createdByUserFullName || 'System'}
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-slate-500 font-semibold">
+                              {new Date(act.createdAt).toLocaleString()}
+                            </div>
+                          </div>
+
+                          <p className="text-xs text-slate-200 leading-relaxed font-medium">
+                            {act.description}
+                          </p>
+
+                          {(act.previousValue || act.newValue) && (
+                            <div className="flex items-center gap-1.5 bg-slate-950/40 p-2 rounded border border-slate-900/60 text-[10px] w-fit font-bold font-mono mt-1 text-slate-400">
+                              {act.previousValue && (
+                                <>
+                                  <span className="text-rose-400/80 line-through bg-rose-950/20 px-1 py-0.2 rounded">
+                                    {act.previousValue}
+                                  </span>
+                                  <span>→</span>
+                                </>
+                              )}
+                              <span className="text-emerald-400 bg-emerald-950/20 px-1 py-0.2 rounded">
+                                {act.newValue}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-12 text-slate-500 italic">
+                  No activity logs recorded yet. Changes to requirements, findings, or notes will generate a log history.
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
@@ -2141,6 +2737,13 @@ export default function AdvisorWorkspaceClient({
                               No accounts created yet. Click "Add Account" to configure client accounts.
                             </div>
                           )}
+
+                          <div className="mt-4 border-t border-slate-700/40 pt-4">
+                            {renderNotesPanel({ 
+                              householdId: hh.id,
+                              title: `Consulting Notes for ${hh.name}` 
+                            })}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -2646,6 +3249,15 @@ export default function AdvisorWorkspaceClient({
                   />
                 </div>
 
+                {editingFinding && (
+                  <div className="border-t border-slate-800 pt-4">
+                    {renderNotesPanel({ 
+                      findingId: editingFinding.id,
+                      title: `Finding Notes: ${editingFinding.title}` 
+                    })}
+                  </div>
+                )}
+
                 <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
                   <Button type="button" variant="secondary" onClick={() => setShowFindingModal(false)}>
                     Cancel
@@ -2977,48 +3589,67 @@ export default function AdvisorWorkspaceClient({
                                 <span className="font-bold text-xs text-slate-200">
                                   {item.itemName} {isCritical && <span className="text-rose-500 font-extrabold text-[10px] ml-1 bg-rose-950/30 px-1 py-0.5 rounded border border-rose-500/20">CRITICAL</span>}
                                 </span>
-                                <select
-                                  value={item.status}
-                                  onChange={e => handleUpdateChecklistItem(item.itemKey, 'status', e.target.value)}
-                                  className="bg-[#0b1329] border border-slate-700 rounded px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-[#d4af37] w-full sm:w-40"
-                                >
-                                  <option value="Unknown">Unknown</option>
-                                  <option value="Present">Present</option>
-                                  <option value="Missing">Missing</option>
-                                  <option value="Needs Review">Needs Review</option>
-                                  <option value="Not Applicable">Not Applicable</option>
-                                </select>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setExpandedChecklistNotesId(expandedChecklistNotesId === item.id ? null : item.id)}
+                                    className="text-[10px] font-bold text-slate-400 hover:text-slate-200 flex items-center gap-1 bg-slate-900 border border-slate-800 px-2 py-1 rounded transition-colors shrink-0"
+                                  >
+                                    <FileText size={10} />
+                                    Notes ({notesList.filter(n => n.checklistItemId === item.id).length})
+                                  </button>
+                                  <select
+                                    value={item.status}
+                                    onChange={e => handleUpdateChecklistItem(item.itemKey, 'status', e.target.value)}
+                                    className="bg-[#0b1329] border border-slate-700 rounded px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-[#d4af37] w-full sm:w-40"
+                                  >
+                                    <option value="Unknown">Unknown</option>
+                                    <option value="Present">Present</option>
+                                    <option value="Missing">Missing</option>
+                                    <option value="Needs Review">Needs Review</option>
+                                    <option value="Not Applicable">Not Applicable</option>
+                                  </select>
+                                </div>
                               </div>
                           
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                            <div className="md:col-span-2">
-                              <input
-                                type="text"
-                                placeholder="Notes / Comments..."
-                                value={item.notes}
-                                onChange={e => handleUpdateChecklistItem(item.itemKey, 'notes', e.target.value)}
-                                className="w-full bg-[#0b1329] border border-slate-700 rounded px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-[#d4af37]"
-                              />
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                <div className="md:col-span-2">
+                                  <input
+                                    type="text"
+                                    placeholder="Notes / Comments..."
+                                    value={item.notes}
+                                    onChange={e => handleUpdateChecklistItem(item.itemKey, 'notes', e.target.value)}
+                                    className="w-full bg-[#0b1329] border border-slate-700 rounded px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-[#d4af37]"
+                                  />
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                  <input
+                                    type="text"
+                                    placeholder="Verified By"
+                                    value={item.verifiedBy}
+                                    onChange={e => handleUpdateChecklistItem(item.itemKey, 'verifiedBy', e.target.value)}
+                                    className="w-full bg-[#0b1329] border border-slate-700 rounded px-3 py-1.5 text-[10px] text-slate-200 placeholder-slate-500 focus:outline-none focus:border-[#d4af37]"
+                                  />
+                                  <input
+                                    type="date"
+                                    value={item.verifiedDate}
+                                    onChange={e => handleUpdateChecklistItem(item.itemKey, 'verifiedDate', e.target.value)}
+                                    className="w-full bg-[#0b1329] border border-slate-700 rounded px-2 py-1.5 text-[10px] text-slate-200 focus:outline-none focus:border-[#d4af37]"
+                                  />
+                                </div>
+                              </div>
+
+                              {expandedChecklistNotesId === item.id && (
+                                <div className="mt-3 border-t border-slate-800/80 pt-3">
+                                  {renderNotesPanel({ 
+                                    checklistItemId: item.id,
+                                    title: `Checklist Requirement Notes: ${item.itemName}` 
+                                  })}
+                                </div>
+                              )}
                             </div>
-                            <div className="grid grid-cols-2 gap-2">
-                              <input
-                                type="text"
-                                placeholder="Verified By"
-                                value={item.verifiedBy}
-                                onChange={e => handleUpdateChecklistItem(item.itemKey, 'verifiedBy', e.target.value)}
-                                className="w-full bg-[#0b1329] border border-slate-700 rounded px-3 py-1.5 text-[10px] text-slate-200 placeholder-slate-500 focus:outline-none focus:border-[#d4af37]"
-                              />
-                              <input
-                                type="date"
-                                value={item.verifiedDate}
-                                onChange={e => handleUpdateChecklistItem(item.itemKey, 'verifiedDate', e.target.value)}
-                                className="w-full bg-[#0b1329] border border-slate-700 rounded px-2 py-1.5 text-[10px] text-slate-200 focus:outline-none focus:border-[#d4af37]"
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
+                          );
+                        })}
                     </div>
                   </div>
                 );
