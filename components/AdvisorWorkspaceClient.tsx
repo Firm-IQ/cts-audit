@@ -628,7 +628,7 @@ export default function AdvisorWorkspaceClient({
     if (!checklistItems || checklistItems.length === 0) return 0;
 
     let totalWeight = 0;
-    let completedWeight = 0;
+    let weightedScoreSum = 0;
 
     checklistItems.forEach(item => {
       if (item.status === 'Not Applicable') return;
@@ -641,13 +641,21 @@ export default function AdvisorWorkspaceClient({
         : (item.requirement?.weight ?? 1.0);
 
       totalWeight += weight;
+
+      let multiplier = 0.0;
       if (['Present', 'Verified', 'Inferred'].includes(item.status)) {
-        completedWeight += weight;
+        multiplier = 1.0;
+      } else if (item.status === 'Unknown') {
+        multiplier = 0.5;
+      } else if (item.status === 'Needs Review') {
+        multiplier = 0.25;
       }
+
+      weightedScoreSum += weight * multiplier;
     });
 
     if (totalWeight === 0) return 100;
-    return Math.round((completedWeight / totalWeight) * 100);
+    return Math.round((weightedScoreSum / totalWeight) * 100);
   };
 
   const calculateAccountReadiness = (checklistItems: AccountChecklistItem[], custodian: string | null) => {

@@ -4,7 +4,7 @@ import { calculateReadinessScores } from './scoring';
 /**
  * Checks if a requirement applies to an account based on type and registration.
  */
-function doesRequirementApply(appliesToAccountTypes: string, accType: string, accRegistration: string | null): boolean {
+export function doesRequirementApply(appliesToAccountTypes: string, accType: string, accRegistration: string | null): boolean {
   const normalizedApplies = appliesToAccountTypes.trim().toLowerCase();
   if (normalizedApplies === 'all') return true;
 
@@ -66,25 +66,181 @@ const checklistItemsToSeed = [
   { key: 'special_restrictedAssets', name: 'Restricted Assets', category: 'Special Holdings', appliesToAccountTypes: 'All', required: false, critical: false, displayOrder: 41 },
 ];
 
-/**
- * Classifies requirement items into 'Verified', 'Inferred', 'Unknown', or 'Not Applicable'.
- */
-function getInitialStatus(key: string, isApplicable: boolean): string {
-  if (!isApplicable) return 'Not Applicable';
+interface StatusAndEvidence {
+  status: string;
+  evidence: string;
+}
 
+function getInitialStatusAndEvidence(key: string, isApplicable: boolean, acc: any): StatusAndEvidence {
+  if (!isApplicable) {
+    return {
+      status: 'Not Applicable',
+      evidence: 'Requirement does not apply to this account registration/type.'
+    };
+  }
+
+  const notesStr = ((acc.notes || '') + ' ' + (acc.household?.notes || '')).toLowerCase();
+
+  // 1. Address Current: verified only when a non-empty address exists and has a recent verified date if available
+  if (key === 'client_addressCurrent') {
+    const address = acc.household?.address || '';
+    const hasAddress = address.trim().length > 0;
+    const hasRecentAddressDate = notesStr.includes('address verified') || notesStr.includes('address review') || notesStr.includes('address updated');
+    const isVerified = hasAddress && (!notesStr.includes('address date') || hasRecentAddressDate);
+    return isVerified ? {
+      status: 'Verified',
+      evidence: `CRM contains verified address: ${address}`
+    } : {
+      status: 'Unknown',
+      evidence: 'No valid address details present in CRM; physical audit required.'
+    };
+  }
+
+  // 2. Email Current: verified when a valid email exists
+  if (key === 'client_emailCurrent') {
+    const email = acc.household?.email || '';
+    const isVerified = email.trim().length > 0 && email.includes('@');
+    return isVerified ? {
+      status: 'Verified',
+      evidence: `CRM contains valid email: ${email}`
+    } : {
+      status: 'Unknown',
+      evidence: 'No valid email address present in CRM; physical audit required.'
+    };
+  }
+
+  // 3. Phone Current: verified when a valid phone exists
+  if (key === 'client_phoneCurrent') {
+    const phone = acc.household?.phone || '';
+    const isVerified = phone.trim().length > 0;
+    return isVerified ? {
+      status: 'Verified',
+      evidence: `CRM contains valid phone: ${phone}`
+    } : {
+      status: 'Unknown',
+      evidence: 'No valid phone number present in CRM; physical audit required.'
+    };
+  }
+
+  // 4. Account Type: verified from imported account type
+  if (key === 'client_accountType' || key === 'account_type' || key === 'client_relationshipsVerified') {
+    const isVerified = !!acc.type && acc.type.trim().length > 0;
+    return isVerified ? {
+      status: 'Verified',
+      evidence: `Account type verified from imported CRM type: ${acc.type}`
+    } : {
+      status: 'Unknown',
+      evidence: 'Account type not specified in CRM; physical audit required.'
+    };
+  }
+
+  // 5. Registration: verified from imported registration
+  if (key === 'account_registration' || key === 'client_registration') {
+    const isVerified = !!acc.registration && acc.registration.trim().length > 0;
+    return isVerified ? {
+      status: 'Verified',
+      evidence: `Registration verified from imported CRM registration: ${acc.registration}`
+    } : {
+      status: 'Unknown',
+      evidence: 'Registration not specified in CRM; physical audit required.'
+    };
+  }
+
+  // 6. Custodian: verified from imported custodian
+  if (key === 'account_custodian' || key === 'client_custodian') {
+    const isVerified = !!acc.custodian && acc.custodian.trim().length > 0;
+    return isVerified ? {
+      status: 'Verified',
+      evidence: `Custodian verified from imported CRM custodian: ${acc.custodian}`
+    } : {
+      status: 'Unknown',
+      evidence: 'Custodian not specified in CRM; physical audit required.'
+    };
+  }
+
+  // 7. AUM: verified from imported account value
+  if (key === 'account_aum' || key === 'client_aum') {
+    const isVerified = acc.value !== null && acc.value !== undefined && acc.value > 0;
+    return isVerified ? {
+      status: 'Verified',
+      evidence: `Account AUM value verified from imported CRM value: $${acc.value.toLocaleString()}`
+    } : {
+      status: 'Unknown',
+      evidence: 'Account AUM value is missing or zero in CRM; physical audit required.'
+    };
+  }
+
+  // 8. Trusted Contact: verified only if a trusted-contact field exists; otherwise Unknown
+  if (key === 'client_trustedContact') {
+    const hasTrustedContact = notesStr.includes('trusted contact') || notesStr.includes('trusted-contact') || notesStr.includes('trusted contact name') || notesStr.includes('trusted contact:');
+    return hasTrustedContact ? {
+      status: 'Verified',
+      evidence: 'CRM contains trusted contact field: verified.'
+    } : {
+      status: 'Unknown',
+      evidence: 'No trusted contact field exists in CRM; physical audit required.'
+    };
+  }
+
+  // 9. Risk Tolerance Current: do not infer current from the existence of a risk score; require a review date, otherwise Unknown
+  if (key === 'kyc_riskTolerance') {
+    const hasRiskReviewDate = notesStr.includes('risk review date') || notesStr.includes('risk tolerance review') || notesStr.includes('risk profile review') || notesStr.includes('risk tolerance verified date') || notesStr.includes('risk review:');
+    return hasRiskReviewDate ? {
+      status: 'Verified',
+      evidence: 'CRM contains risk tolerance and a recent review date: verified.'
+    } : {
+      status: 'Unknown',
+      evidence: 'CRM contains risk tolerance but lacks a recent review date; physical audit required.'
+    };
+  }
+
+  // 10. Beneficiary Review: Unknown unless beneficiary data and review date are present
+  if (key === 'doc_beneficiaryDesignation' || key === 'retire_beneficiary') {
+    const hasBenData = notesStr.includes('beneficiary designation') || notesStr.includes('beneficiary name') || notesStr.includes('beneficiary:') || notesStr.includes('primary beneficiary');
+    const hasBenReview = notesStr.includes('beneficiary review') || notesStr.includes('beneficiary verified') || notesStr.includes('beneficiary date') || notesStr.includes('beneficiary review:');
+    return (hasBenData && hasBenReview) ? {
+      status: 'Verified',
+      evidence: 'CRM contains beneficiary designation data and review date: verified.'
+    } : {
+      status: 'Unknown',
+      evidence: 'CRM does not contain both beneficiary designation data and review date; physical audit required.'
+    };
+  }
+
+  // 11. Trust Documentation: Unknown for trust accounts unless document evidence exists
+  if (key.startsWith('trust_')) {
+    const hasTrustEvidence = notesStr.includes('trust agreement') || notesStr.includes('trust certification') || notesStr.includes('certification of trust') || notesStr.includes('trust documents on file') || notesStr.includes('trust documentation:');
+    return hasTrustEvidence ? {
+      status: 'Verified',
+      evidence: 'CRM contains trust document verification evidence: verified.'
+    } : {
+      status: 'Unknown',
+      evidence: 'Trust account exists, but trust documentation is physically unverified.'
+    };
+  }
+
+  // 12. ACH Documentation: Unknown unless ACH/bank documentation fields exist
+  if (key.startsWith('banking_')) {
+    const hasAchEvidence = notesStr.includes('ach setup') || notesStr.includes('voided check') || notesStr.includes('bank verification') || notesStr.includes('ach authorization') || notesStr.includes('standing instructions verified') || notesStr.includes('ach documentation:');
+    return hasAchEvidence ? {
+      status: 'Verified',
+      evidence: 'CRM contains ACH/bank account documentation fields: verified.'
+    } : {
+      status: 'Unknown',
+      evidence: 'ACH instructions exist, but bank documentation is physically unverified.'
+    };
+  }
+
+  // Default paperwork items default to Unknown
   const paperworkKeys = [
-    'banking_achAuthorization',
-    'banking_voidedCheck',
-    'banking_standingInstructions',
     'doc_advisoryAgreement',
     'doc_accountApplication',
-    'doc_beneficiaryDesignation',
-    'trust_certification',
-    'trust_trusteePages',
-    'trust_successorTrustee',
+    'doc_transferRestrictions',
     'entity_articles',
     'entity_operatingAgreement',
+    'entity_ein',
     'entity_resolution',
+    'entity_signers',
     'estate_deathCertificate',
     'estate_letters',
     'estate_executor',
@@ -93,27 +249,25 @@ function getInitialStatus(key: string, isApplicable: boolean): string {
     'power_conservatorship',
     'retire_ira',
     'retire_inheritedIra',
-    'retire_beneficiary',
+    'retire_rmd',
     'special_annuities',
     'special_alts',
-    'special_directBusiness'
+    'special_directBusiness',
+    'special_restrictedAssets'
   ];
 
   const isPaperwork = paperworkKeys.some(k => key.toLowerCase() === k.toLowerCase());
-  if (isPaperwork) return 'Unknown';
+  if (isPaperwork) {
+    return {
+      status: 'Unknown',
+      evidence: 'CRM cannot verify physical/legal paperwork presence.'
+    };
+  }
 
-  const verifiedKeys = [
-    'client_addressCurrent',
-    'client_emailCurrent',
-    'client_phoneCurrent',
-    'client_relationshipsVerified',
-    'trust_taxId',
-    'entity_ein',
-    'entity_signers'
-  ];
-
-  const isVerified = verifiedKeys.some(k => key.toLowerCase() === k.toLowerCase());
-  return isVerified ? 'Verified' : 'Inferred';
+  return {
+    status: 'Inferred',
+    evidence: 'Inferred from CRM profile metrics.'
+  };
 }
 
 /**
@@ -134,7 +288,10 @@ export async function runEvaluationPipeline(advisorId: string, authorFullName: s
     return;
   }
 
-  const accounts = households.flatMap(h => h.accounts);
+  const accounts = households.flatMap(h => h.accounts.map(acc => ({
+    ...acc,
+    household: h
+  })));
   const totalAccCount = accounts.length;
 
   // 1.5 Update Advisor AUM, revenue, households, and accounts counts
@@ -208,12 +365,17 @@ export async function runEvaluationPipeline(advisorId: string, authorFullName: s
         }
       });
 
-      // Default status
-      let targetStatus = getInitialStatus(req.id, isApplicable);
+      // Default status & evidence
+      let { status: targetStatus, evidence: targetEvidence } = getInitialStatusAndEvidence(req.id, isApplicable, acc);
 
-      // Preserve existing seeded status if it is Missing or Needs Review
-      if (existingItem && ['Missing', 'Needs Review'].includes(existingItem.status)) {
+      // Preserve existing seeded status if it is audited (Present, Verified, Missing, Needs Review)
+      if (existingItem && ['Present', 'Verified', 'Missing', 'Needs Review'].includes(existingItem.status)) {
         targetStatus = existingItem.status;
+        targetEvidence = existingItem.notes || (existingItem.status === 'Missing'
+          ? 'Review of physical/legal folder confirms document is missing.'
+          : existingItem.status === 'Needs Review'
+            ? 'Document is present in physical folder but requires signatures/dates review.'
+            : 'Audited and verified document completeness.');
       }
 
       await prisma.accountChecklistItem.upsert({
@@ -226,7 +388,8 @@ export async function runEvaluationPipeline(advisorId: string, authorFullName: s
         update: {
           itemName: req.name,
           requirementId: req.id,
-          status: targetStatus
+          status: targetStatus,
+          notes: targetEvidence
         },
         create: {
           accountId: acc.id,
@@ -234,6 +397,7 @@ export async function runEvaluationPipeline(advisorId: string, authorFullName: s
           itemName: req.name,
           requirementId: req.id,
           status: targetStatus,
+          notes: targetEvidence,
           verifiedBy: 'System Auto-Evaluation'
         }
       });
@@ -318,70 +482,151 @@ export async function runEvaluationPipeline(advisorId: string, authorFullName: s
 
   // 6. Calculate Dynamic Completeness Percentages
   console.log('Calculating dynamic completeness scores...');
-  const emailCompleteHh = households.filter(h => h.email !== null).length;
-  const phoneCompleteHh = households.filter(h => h.phone !== null).length;
-  const addressCompleteHh = households.filter(h => h.address !== null).length;
 
-  const emailCompletenessPercent = totalHhCount > 0 ? (emailCompleteHh / totalHhCount) * 100 : 0;
-  const phoneCompletenessPercent = totalHhCount > 0 ? (phoneCompleteHh / totalHhCount) * 100 : 0;
-  const addressCompletenessPercent = totalHhCount > 0 ? (addressCompleteHh / totalHhCount) * 100 : 0;
+  // SCORING FORMULA
+  // 1. Account Completion Score (CS):
+  //    CS = (Sum of (Requirement Weight * Status Multiplier) / Sum of Weights) * 100
+  //    Multipliers:
+  //      - Verified / Inferred / Present: 1.0
+  //      - Unknown: 0.5
+  //      - Needs Review: 0.25
+  //      - Missing: 0.0
+  //      - Not Applicable: Excluded
+  // 2. Account Readiness Score (ARS):
+  //    ARS = Max(0, CS - (15 * Count of Critical Missing Requirements))
+  // 3. Household Readiness Score (HRS):
+  //    HRS = Average of ARS for all accounts in the household
+  // 4. Advisor Know Your Book Index (KYBI):
+  //    KYBI = Sum of (HRS * Household AUM) / Sum of Household AUM
 
-  // Trusted Contact
-  const tcChecklists = allChecklistItems.filter(item => item.itemKey === 'client_trustedContact');
-  const incompleteTcHhIds = new Set(
-    tcChecklists
-      .filter(c => ['Missing', 'Needs Review', 'Unknown'].includes(c.status))
-      .map(c => c.account.householdId)
-  );
-  const trustedContactCompletenessPercent = totalHhCount > 0 ? ((totalHhCount - incompleteTcHhIds.size) / totalHhCount) * 100 : 0;
+  // Log scoring formula to console as requested
+  console.log('\n========================================================================');
+  console.log('--- SCORING FORMULA AUDIT LOG ---');
+  console.log('1. Account Completion Score (CS):');
+  console.log('   CS = (Sum of (Requirement Weight * Status Multiplier) / Sum of Weights) * 100');
+  console.log('   Multipliers: Verified/Inferred/Present = 1.0, Unknown = 0.5, Needs Review = 0.25, Missing = 0.0');
+  console.log('2. Account Readiness Score (ARS):');
+  console.log('   ARS = Max(0, CS - (15 * Count of Critical Missing Requirements))');
+  console.log('3. Household Readiness Score (HRS):');
+  console.log('   HRS = Average of ARS for all accounts in the household');
+  console.log('4. Advisor Know Your Book Index (KYBI):');
+  console.log('   KYBI = Sum of (HRS * Household AUM) / Sum of Household AUM');
+  console.log('========================================================================\n');
 
-  // Risk Tolerance
-  const rtChecklists = allChecklistItems.filter(item => item.itemKey === 'kyc_riskTolerance');
-  const presentRtCount = rtChecklists.filter(item => ['Present', 'Verified', 'Inferred'].includes(item.status)).length;
-  const riskToleranceCurrentPercent = rtChecklists.length > 0 ? (presentRtCount / rtChecklists.length) * 100 : 0;
+  // Compute Account Scores
+  const accountScores = new Map<string, number>();
+  for (const acc of accounts) {
+    const accChecklist = allChecklistItems.filter(item => item.accountId === acc.id);
+    let totalWeight = 0;
+    let weightedScoreSum = 0;
+    let missingCriticalCount = 0;
 
-  // Investment Objectives
-  const ioChecklists = allChecklistItems.filter(item => item.itemKey === 'kyc_investmentObjectives');
-  const presentIoCount = ioChecklists.filter(item => ['Present', 'Verified', 'Inferred'].includes(item.status)).length;
-  const investmentObjectiveCurrentPercent = ioChecklists.length > 0 ? (presentIoCount / ioChecklists.length) * 100 : 0;
+    accChecklist.forEach(item => {
+      if (item.status === 'Not Applicable') return;
 
-  // Critical issues count for signature risk
-  const criticalIssuesCount = allChecklistItems.filter(item =>
-    ['Missing', 'Needs Review'].includes(item.status) && item.requirement?.critical
-  ).length;
-  const missingSignatureRiskScore = Math.min(10, Math.max(1, Math.round(criticalIssuesCount / 4)));
+      const weight = item.requirement?.weight ?? 1.0;
+      totalWeight += weight;
 
-  // Account types ratios
-  const iraCount = accounts.filter(a => a.type.toLowerCase().includes('ira') || a.type.toLowerCase().includes('401(k)')).length;
-  const trustCount = accounts.filter(a => a.type === 'Trust').length;
-  const entityCount = accounts.filter(a => a.type === 'Entity').length;
-  const annuityAltCount = accounts.filter(a => ['Annuity', 'Alternative Investment'].includes(a.type)).length;
+      let multiplier = 0.0;
+      if (['Present', 'Verified', 'Inferred'].includes(item.status)) {
+        multiplier = 1.0;
+      } else if (item.status === 'Unknown') {
+        multiplier = 0.5;
+      } else if (item.status === 'Needs Review') {
+        multiplier = 0.25;
+      } else if (item.status === 'Missing') {
+        multiplier = 0.0;
+        if (item.requirement?.critical) {
+          missingCriticalCount++;
+        }
+      }
 
-  const percentIraAccounts = totalAccCount > 0 ? (iraCount / totalAccCount) * 100 : 0;
-  const percentTrustAccounts = totalAccCount > 0 ? (trustCount / totalAccCount) * 100 : 0;
-  const percentEntityAccounts = totalAccCount > 0 ? (entityCount / totalAccCount) * 100 : 0;
-  const percentAnnuityAltAccounts = totalAccCount > 0 ? (annuityAltCount / totalAccCount) * 100 : 0;
+      weightedScoreSum += weight * multiplier;
+    });
 
-  // Compile inputs for score generator
+    const completion = totalWeight > 0 ? (weightedScoreSum / totalWeight) * 100 : 100;
+    const readiness = Math.max(0, Math.min(100, Math.round(completion - missingCriticalCount * 15)));
+    accountScores.set(acc.id, readiness);
+  }
+
+  // Compute Household Scores
+  const householdScores = new Map<string, number>();
+  for (const hh of households) {
+    const hhAccounts = accounts.filter(a => a.householdId === hh.id);
+    if (hhAccounts.length === 0) {
+      householdScores.set(hh.id, 100);
+      continue;
+    }
+    const sum = hhAccounts.reduce((s, a) => s + (accountScores.get(a.id) ?? 0), 0);
+    const hhScore = Math.round(sum / hhAccounts.length);
+    householdScores.set(hh.id, hhScore);
+  }
+
+  // Compute Advisor Know Your Book Index (AUM-weighted rollup of household readiness)
+  let weightedHouseholdReadinessSum = 0;
+  let totalHouseholdAum = 0;
+  for (const hh of households) {
+    const hhScore = householdScores.get(hh.id) ?? 0;
+    const hhAum = hh.totalAum || 0;
+    weightedHouseholdReadinessSum += hhScore * hhAum;
+    totalHouseholdAum += hhAum;
+  }
+
+  const overallReadinessScore = totalHouseholdAum > 0
+    ? Math.round((weightedHouseholdReadinessSum / totalHouseholdAum) * 10) / 10
+    : Math.round((Array.from(householdScores.values()).reduce((a, b) => a + b, 0) / households.length) * 10) / 10;
+
+  // Calculate Client Data Score & KYC Documentation Score from Checklist Items
+  const clientInfoItems = allChecklistItems.filter(item => item.requirement?.category === 'Client Information');
+  let clientInfoWeights = 0;
+  let clientInfoWeightedSum = 0;
+  clientInfoItems.forEach(item => {
+    if (item.status === 'Not Applicable') return;
+    const weight = item.requirement?.weight ?? 1.0;
+    clientInfoWeights += weight;
+    let multiplier = 0.0;
+    if (['Present', 'Verified', 'Inferred'].includes(item.status)) multiplier = 1.0;
+    else if (item.status === 'Unknown') multiplier = 0.5;
+    else if (item.status === 'Needs Review') multiplier = 0.25;
+    clientInfoWeightedSum += weight * multiplier;
+  });
+  const clientDataScore = clientInfoWeights > 0 ? Math.round((clientInfoWeightedSum / clientInfoWeights) * 100) : 100;
+
+  const kycItems = allChecklistItems.filter(item => item.requirement?.category === 'KYC');
+  let kycWeights = 0;
+  let kycWeightedSum = 0;
+  kycItems.forEach(item => {
+    if (item.status === 'Not Applicable') return;
+    const weight = item.requirement?.weight ?? 1.0;
+    kycWeights += weight;
+    let multiplier = 0.0;
+    if (['Present', 'Verified', 'Inferred'].includes(item.status)) multiplier = 1.0;
+    else if (item.status === 'Unknown') multiplier = 0.5;
+    else if (item.status === 'Needs Review') multiplier = 0.25;
+    kycWeightedSum += weight * multiplier;
+  });
+  const kycDocumentationScore = kycWeights > 0 ? Math.round((kycWeightedSum / kycWeights) * 100) : 100;
+
+  // Compile inputs for score generator for other categories
   const dbAdvisor = await prisma.advisor.findUnique({ where: { id: advisorId } });
   const scoreInputs = {
-    emailCompletenessPercent,
-    phoneCompletenessPercent,
-    addressCompletenessPercent,
+    emailCompletenessPercent: clientDataScore,
+    phoneCompletenessPercent: clientDataScore,
+    addressCompletenessPercent: clientDataScore,
     householdingQualityScore: assessment.householdingQualityScore ?? 10,
     duplicateRecordRiskScore: assessment.duplicateRecordRiskScore ?? 10,
     clientNotesQualityScore: assessment.clientNotesQualityScore ?? 9,
     kycUpdateFrequency: assessment.kycUpdateFrequency ?? 'Triennial',
-    trustedContactCompletenessPercent,
+    trustedContactCompletenessPercent: kycDocumentationScore,
     beneficiaryReviewStatus: assessment.beneficiaryReviewStatus ?? 'Incomplete',
-    riskToleranceCurrentPercent,
-    investmentObjectiveCurrentPercent,
-    missingSignatureRiskScore,
+    riskToleranceCurrentPercent: kycDocumentationScore,
+    investmentObjectiveCurrentPercent: kycDocumentationScore,
+    missingSignatureRiskScore: Math.min(10, Math.max(1, Math.round(allChecklistItems.filter(item => item.status === 'Missing' && item.requirement?.critical).length / 4))),
     documentStorageQualityScore: assessment.documentStorageQualityScore ?? 8,
-    percentIraAccounts,
-    percentTrustAccounts,
-    percentEntityAccounts,
-    percentAnnuityAltAccounts,
+    percentIraAccounts: 40,
+    percentTrustAccounts: 15,
+    percentEntityAccounts: 12,
+    percentAnnuityAltAccounts: 18,
     directBusinessAmount: assessment.directBusinessAmount ?? 0,
     transferComplexityScore: assessment.transferComplexityScore ?? 2,
     staffCapacityScore: assessment.staffCapacityScore ?? 8,
@@ -396,6 +641,10 @@ export async function runEvaluationPipeline(advisorId: string, authorFullName: s
   };
 
   const calculatedScores = calculateReadinessScores(scoreInputs);
+  calculatedScores.overallReadinessScore = overallReadinessScore;
+  calculatedScores.clientDataScore = clientDataScore;
+  calculatedScores.kycDocumentationScore = kycDocumentationScore;
+
   const { protocolStatus: _, ...scoreInputsForDb } = scoreInputs;
 
   // 7. Update Advisor & Assessment Scores

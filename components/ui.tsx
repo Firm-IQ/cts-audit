@@ -227,9 +227,6 @@ export function Navbar({ userName, email, role }: { userName?: string | null; em
         <Link href="/dashboard" className="text-sm font-semibold text-slate-300 hover:text-[#d4af37] transition-colors">
           Advisors
         </Link>
-        <Link href="/households" className="text-sm font-semibold text-slate-300 hover:text-[#d4af37] transition-colors">
-          Households
-        </Link>
         <Link href="/import" className="text-sm font-semibold text-slate-300 hover:text-[#d4af37] transition-colors">
           Import CRM
         </Link>

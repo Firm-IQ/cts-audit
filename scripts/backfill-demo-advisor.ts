@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { runEvaluationPipeline } from '../lib/evaluation-pipeline';
+import { runEvaluationPipeline, doesRequirementApply } from '../lib/evaluation-pipeline';
 
 const prisma = new PrismaClient();
 
@@ -13,19 +13,6 @@ async function main() {
 
   if (!advisor) {
     console.log('No advisor named "Michael Bennett" found. Skipping backfill.');
-    return;
-  }
-
-  // Check if backfill has already been run
-  const sampleChecked = await prisma.accountChecklistItem.findFirst({
-    where: {
-      account: { household: { advisorId: advisor.id } },
-      status: { in: ['Verified', 'Inferred'] }
-    }
-  });
-
-  if (sampleChecked) {
-    console.log('Backfill already executed previously. Skipped.');
     return;
   }
 
@@ -44,7 +31,7 @@ async function main() {
 
   console.log(`Loading accounts to process... Total accounts: ${dbAccounts.length}`);
 
-  // Fetch requirement definitions
+  // Fetch active requirement definitions
   const activeRequirements = await prisma.requirementLibrary.findMany({
     where: { active: true }
   });
@@ -59,8 +46,6 @@ async function main() {
   const reqInvestmentObjectives = activeRequirements.find(r => r.name === 'Investment Objectives Current')?.id || '';
 
   const showcaseNames = ['Morgan Family Trust', 'Carter Household', 'Reynolds Household', 'Patel Household', 'Thompson Household'];
-
-  console.log('Injecting / reinforcing seeded demo statuses for Missing and Needs Review items...');
 
   // Issue 1: 24 households without trusted contact
   const tcHhs = dbHouseholds.filter(h => h.name === 'Carter Household' || !showcaseNames.includes(h.name)).slice(0, 24);
@@ -97,80 +82,131 @@ async function main() {
   const objectivesAccs = dbAccounts.slice(50, 56);
   const objAccIds = new Set(objectivesAccs.map(a => a.id));
 
-  // Upsert the specific demo issues
-  for (const acc of dbAccounts) {
-    // 1. Trusted Contact (Missing)
-    if (reqTrustedContact && tcHhIds.has(acc.householdId)) {
-      await prisma.accountChecklistItem.upsert({
-        where: { accountId_itemKey: { accountId: acc.id, itemKey: reqTrustedContact } },
-        update: { status: 'Missing', notes: 'No trusted contact person on file.' },
-        create: { accountId: acc.id, itemKey: reqTrustedContact, itemName: 'Trusted Contact', requirementId: reqTrustedContact, status: 'Missing', notes: 'No trusted contact person on file.' }
-      });
-    }
+  console.log('Cleaning up existing checklist items for Michael Bennett to rebuild distribution...');
+  await prisma.accountChecklistItem.deleteMany({
+    where: { account: { household: { advisorId: advisor.id } } }
+  });
 
-    // 2. Beneficiary Review (Needs Review)
-    if (reqBeneficiary && benAccIds.has(acc.id)) {
-      await prisma.accountChecklistItem.upsert({
-        where: { accountId_itemKey: { accountId: acc.id, itemKey: reqBeneficiary } },
-        update: { status: 'Needs Review', notes: 'Beneficiary designation requires verification or signature.' },
-        create: { accountId: acc.id, itemKey: reqBeneficiary, itemName: 'Beneficiary Review', requirementId: reqBeneficiary, status: 'Needs Review', notes: 'Beneficiary designation requires verification or signature.' }
-      });
-    }
+  // 1. Run pipeline first to dynamically evaluate CRM fields
+  console.log('Running initial evaluation pipeline to evaluate CRM fields...');
+  await runEvaluationPipeline(advisor.id, 'Render Deploy Backfill');
 
-    // 3. Voided Check / Bank Verification (Missing)
-    if (reqVoidedCheck && achAccIds.has(acc.id)) {
-      await prisma.accountChecklistItem.upsert({
-        where: { accountId_itemKey: { accountId: acc.id, itemKey: reqVoidedCheck } },
-        update: { status: 'Missing', notes: 'ACH setup requires voided check or bank letter verification.' },
-        create: { accountId: acc.id, itemKey: reqVoidedCheck, itemName: 'Voided Check / Bank Verification', requirementId: reqVoidedCheck, status: 'Missing', notes: 'ACH setup requires voided check or bank letter verification.' }
-      });
-    }
+  // 2. Fetch the newly created checklist items
+  const newlyCreatedItems = await prisma.accountChecklistItem.findMany({
+    where: { account: { household: { advisorId: advisor.id } } }
+  });
 
-    // 4. Trust succession / certificates (Missing)
-    if (acc.id === morganTrustAcc?.id && reqSuccessorTrustee) {
-      await prisma.accountChecklistItem.upsert({
-        where: { accountId_itemKey: { accountId: acc.id, itemKey: reqSuccessorTrustee } },
-        update: { status: 'Missing', notes: 'Successor trustee page or designation is missing.' },
-        create: { accountId: acc.id, itemKey: reqSuccessorTrustee, itemName: 'Successor Trustee', requirementId: reqSuccessorTrustee, status: 'Missing', notes: 'Successor trustee page or designation is missing.' }
-      });
-    }
-    if (docTrustIds.has(acc.id) && reqTrustCertification) {
-      await prisma.accountChecklistItem.upsert({
-        where: { accountId_itemKey: { accountId: acc.id, itemKey: reqTrustCertification } },
-        update: { status: 'Missing', notes: 'Complete Certification of Trust missing from folder.' },
-        create: { accountId: acc.id, itemKey: reqTrustCertification, itemName: 'Trust Certification', requirementId: reqTrustCertification, status: 'Missing', notes: 'Complete Certification of Trust missing from folder.' }
-      });
-    }
+  console.log('Applying realistic deficiency injections and group scoring distributions...');
+  for (let idx = 0; idx < dbAccounts.length; idx++) {
+    const acc = dbAccounts[idx];
+    const accItems = newlyCreatedItems.filter(item => item.accountId === acc.id);
 
-    // 5. Inherited IRA documentation (Missing)
-    if (reqInheritedIraDoc && inhAccIds.has(acc.id)) {
-      await prisma.accountChecklistItem.upsert({
-        where: { accountId_itemKey: { accountId: acc.id, itemKey: reqInheritedIraDoc } },
-        update: { status: 'Missing', notes: 'Incomplete inherited adoption or original owner documentation.' },
-        create: { accountId: acc.id, itemKey: reqInheritedIraDoc, itemName: 'Inherited IRA Documentation', requirementId: reqInheritedIraDoc, status: 'Missing', notes: 'Incomplete inherited adoption or original owner documentation.' }
-      });
-    }
+    // Determine deficiency membership
+    const hasTcDef = tcHhIds.has(acc.householdId);
+    const hasBenDef = benAccIds.has(acc.id);
+    const hasAchDef = achAccIds.has(acc.id);
+    const hasMorganDef = acc.id === morganTrustAcc?.id;
+    const hasTrustCertDef = docTrustIds.has(acc.id);
+    const hasInhDef = inhAccIds.has(acc.id);
+    const hasKycDef = kycHhIds.has(acc.householdId);
+    const hasObjDef = objAccIds.has(acc.id);
+    const isDeficient = hasTcDef || hasBenDef || hasAchDef || hasMorganDef || hasTrustCertDef || hasInhDef || hasKycDef || hasObjDef;
 
-    // 6. Outdated KYC (Needs Review)
-    if (reqLastReview && kycHhIds.has(acc.householdId)) {
-      await prisma.accountChecklistItem.upsert({
-        where: { accountId_itemKey: { accountId: acc.id, itemKey: reqLastReview } },
-        update: { status: 'Needs Review', notes: 'KYC last review date was more than 24 months ago.' },
-        create: { accountId: acc.id, itemKey: reqLastReview, itemName: 'Last Review Current', requirementId: reqLastReview, status: 'Needs Review', notes: 'KYC last review date was more than 24 months ago.' }
-      });
-    }
+    // Seeding distribution strategy:
+    // - Group 1: 45% (idx % 10 < 4.5) -> Fully Complete (100% Score)
+    // - Group 2: 35% (idx % 10 >= 4.5 && idx % 10 < 8) -> Mostly Complete (80-99% Score)
+    // - Group 3: 20% (idx % 10 >= 8) -> Unreviewed/Default (50-79% Score)
+    const isGroup1 = !isDeficient && (idx % 10 < 4.5);
+    const isGroup2 = !isDeficient && (idx % 10 >= 4.5 && idx % 10 < 8);
 
-    // 7. Stale Objectives (Needs Review)
-    if (reqInvestmentObjectives && objAccIds.has(acc.id)) {
-      await prisma.accountChecklistItem.upsert({
-        where: { accountId_itemKey: { accountId: acc.id, itemKey: reqInvestmentObjectives } },
-        update: { status: 'Needs Review', notes: 'Stale risk profile or mismatch between holding asset allocation.' },
-        create: { accountId: acc.id, itemKey: reqInvestmentObjectives, itemName: 'Investment Objectives Current', requirementId: reqInvestmentObjectives, status: 'Needs Review', notes: 'Stale risk profile or mismatch between holding asset allocation.' }
-      });
+    for (const item of accItems) {
+      let status = item.status;
+      let notes = item.notes || '';
+
+      // Set initial state based on CRM check rules
+      const paperworkKeys = [
+        'banking_achAuthorization', 'banking_voidedCheck', 'banking_standingInstructions',
+        'doc_advisoryAgreement', 'doc_accountApplication', 'doc_beneficiaryDesignation', 'doc_transferRestrictions',
+        'trust_certification', 'trust_trusteePages', 'trust_successorTrustee', 'trust_taxId',
+        'entity_articles', 'entity_operatingAgreement', 'entity_ein', 'entity_resolution', 'entity_signers',
+        'estate_deathCertificate', 'estate_letters', 'estate_executor', 'power_poa', 'power_guardianship', 'power_conservatorship',
+        'retire_ira', 'retire_inheritedIra', 'retire_beneficiary', 'retire_rmd', 'special_annuities', 'special_alts', 'special_directBusiness', 'special_restrictedAssets'
+      ];
+      const isPaperwork = paperworkKeys.some(k => item.itemKey.toLowerCase() === k.toLowerCase());
+
+      // Injected deficiencies
+      let isOverridden = false;
+      if (item.itemKey === reqTrustedContact && hasTcDef) {
+        status = 'Missing';
+        notes = 'No trusted contact person on file.';
+        isOverridden = true;
+      } else if (item.itemKey === reqBeneficiary && hasBenDef) {
+        status = 'Needs Review';
+        notes = 'Beneficiary designation requires verification or signature.';
+        isOverridden = true;
+      } else if (item.itemKey === reqVoidedCheck && hasAchDef) {
+        status = 'Missing';
+        notes = 'ACH setup requires voided check or bank letter verification.';
+        isOverridden = true;
+      } else if (hasMorganDef && item.itemKey === reqSuccessorTrustee) {
+        status = 'Missing';
+        notes = 'Successor trustee page or designation is missing.';
+        isOverridden = true;
+      } else if (hasTrustCertDef && item.itemKey === reqTrustCertification) {
+        status = 'Missing';
+        notes = 'Complete Certification of Trust missing from folder.';
+        isOverridden = true;
+      } else if (item.itemKey === reqInheritedIraDoc && hasInhDef) {
+        status = 'Missing';
+        notes = 'Incomplete inherited adoption or original owner documentation.';
+        isOverridden = true;
+      } else if (item.itemKey === reqLastReview && hasKycDef) {
+        status = 'Needs Review';
+        notes = 'KYC last review date was more than 24 months ago.';
+        isOverridden = true;
+      } else if (item.itemKey === reqInvestmentObjectives && hasObjDef) {
+        status = 'Needs Review';
+        notes = 'Stale risk profile or mismatch between holding asset allocation.';
+        isOverridden = true;
+      }
+
+      // Group distribution formatting if not overridden by deficiencies
+      if (!isOverridden) {
+        if (isGroup1) {
+          if (isPaperwork) {
+            status = 'Verified';
+            notes = 'Audited and verified document completeness.';
+          }
+        } else if (isGroup2) {
+          if (isPaperwork) {
+            if (item.itemKey === 'doc_advisoryAgreement') {
+              status = 'Unknown';
+              notes = 'CRM cannot verify physical/legal paperwork presence.';
+            } else {
+              status = 'Verified';
+              notes = 'Audited and verified document completeness.';
+            }
+          }
+        } else if (isDeficient) {
+          // Deficient account, but other checklist items can be Verified to avoid complete crash of score
+          if (isPaperwork) {
+            status = 'Verified';
+            notes = 'Audited and verified document completeness.';
+          }
+        }
+      }
+
+      if (status !== item.status || notes !== item.notes) {
+        await prisma.accountChecklistItem.update({
+          where: { id: item.id },
+          data: { status, notes }
+        });
+      }
     }
   }
 
-  // 2. Run the evaluation pipeline
+  // 3. Run pipeline a second time to calculate and persist correct rollups and findings
+  console.log('Running final evaluation pipeline to calculate scores and findings...');
   await runEvaluationPipeline(advisor.id, 'Render Deploy Backfill');
 
   // 3. Query final stats for reporting
@@ -212,74 +248,138 @@ async function main() {
     statusStats[item.status] = (statusStats[item.status] || 0) + 1;
   }
 
-  console.log('\n========================================');
-  console.log('--- BACKFILL COMPLETED SUCCESSFULLY ---');
-  console.log('========================================');
-  console.log(`- Active Requirements Found:  ${activeRequirements.length}`);
-  
-  console.log('\n- Requirements Matched Per Account Type:');
-  for (const [type, count] of Object.entries(matchStats)) {
-    console.log(`  * ${type}: ${count} total matches`);
-  }
+  // Calculate score distribution
+  let count100 = 0;
+  let count90to99 = 0;
+  let count80to89 = 0;
+  let count70to79 = 0;
+  let count60to69 = 0;
+  let countBelow60 = 0;
 
-  console.log(`\n- Accounts Processed:          ${dbAccounts.length}`);
-  console.log(`- Checklist Items Created:     ${checklistItemsCount}`);
-
-  console.log('\n- Checklist Items By Status:');
-  for (const [status, count] of Object.entries(statusStats)) {
-    console.log(`  * ${status}: ${count}`);
-  }
-
-  console.log('\n- Account Scores (Sample of 10):');
-  for (const acc of dbAccounts.slice(0, 10)) {
+  const accountScores = new Map<string, number>();
+  for (const acc of dbAccounts) {
     const accChecklist = allChecklistItems.filter(item => item.accountId === acc.id);
     let totalWeight = 0;
-    let completedWeight = 0;
+    let weightedScoreSum = 0;
+    let missingCriticalCount = 0;
+
     accChecklist.forEach(item => {
       if (item.status === 'Not Applicable') return;
       const weight = item.requirement?.weight ?? 1.0;
       totalWeight += weight;
+
+      let multiplier = 0.0;
       if (['Present', 'Verified', 'Inferred'].includes(item.status)) {
-        completedWeight += weight;
+        multiplier = 1.0;
+      } else if (item.status === 'Unknown') {
+        multiplier = 0.5;
+      } else if (item.status === 'Needs Review') {
+        multiplier = 0.25;
+      } else if (item.status === 'Missing') {
+        multiplier = 0.0;
+        if (item.requirement?.critical) {
+          missingCriticalCount++;
+        }
       }
+      weightedScoreSum += weight * multiplier;
     });
-    const completionScore = totalWeight > 0 ? Math.round((completedWeight / totalWeight) * 100) : 100;
-    console.log(`  * Account "${acc.name}" (${acc.type}): Score = ${completionScore}% | Status = ${acc.readinessStatus}`);
+
+    const completion = totalWeight > 0 ? (weightedScoreSum / totalWeight) * 100 : 100;
+    const score = Math.max(0, Math.min(100, Math.round(completion - missingCriticalCount * 15)));
+    accountScores.set(acc.id, score);
+
+    if (score === 100) count100++;
+    else if (score >= 90) count90to99++;
+    else if (score >= 80) count80to89++;
+    else if (score >= 70) count70to79++;
+    else if (score >= 60) count60to69++;
+    else countBelow60++;
   }
 
-  console.log('\n- Household Scores:');
+  console.log('\n========================================');
+  console.log('--- PRODUCTION BACKFILL EVALUATION LOGS ---');
+  console.log('========================================');
+  console.log(`- accounts processed: ${dbAccounts.length}`);
+  
+  console.log('\n- checklist items updated by status:');
+  for (const [status, count] of Object.entries(statusStats)) {
+    console.log(`  * ${status}: ${count}`);
+  }
+
+  console.log('\n- account scores calculated:');
+  for (const [accId, score] of accountScores.entries()) {
+    const acc = dbAccounts.find(a => a.id === accId);
+    console.log(`  * ${acc?.name || accId}: ${score}%`);
+  }
+
+  console.log('\n- household scores calculated:');
   for (const hh of dbHouseholds) {
-    const hhChecklist = allChecklistItems.filter(item => item.account.householdId === hh.id);
-    let totalReadiness = 0;
     const hhAccounts = dbAccounts.filter(a => a.householdId === hh.id);
-    hhAccounts.forEach(acc => {
-      const accChecklist = allChecklistItems.filter(item => item.accountId === acc.id);
-      let totalWeight = 0;
-      let completedWeight = 0;
-      accChecklist.forEach(item => {
-        if (item.status === 'Not Applicable') return;
-        const weight = item.requirement?.weight ?? 1.0;
-        totalWeight += weight;
-        if (['Present', 'Verified', 'Inferred'].includes(item.status)) {
-          completedWeight += weight;
-        }
-      });
-      const completion = totalWeight > 0 ? Math.round((completedWeight / totalWeight) * 100) : 100;
-      const missingCritical = accChecklist.filter(item => {
-        if (item.status !== 'Missing') return false;
-        return item.requirement?.critical || ['client_addressCurrent', 'client_emailCurrent', 'client_phoneCurrent', 'kyc_riskTolerance', 'kyc_investmentObjectives', 'doc_advisoryAgreement', 'doc_accountApplication', 'doc_beneficiaryDesignation'].includes(item.itemKey);
-      }).length;
-      const readiness = Math.max(0, Math.min(100, completion - (missingCritical * 15)));
-      totalReadiness += readiness;
-    });
-    const hhScore = hhAccounts.length > 0 ? Math.round(totalReadiness / hhAccounts.length) : 0;
-    console.log(`  * Household "${hh.name}": Score = ${hhScore}% | Status = ${hh.readinessStatus}`);
+    const hhScore = hhAccounts.length > 0
+      ? Math.round(hhAccounts.reduce((sum, a) => sum + (accountScores.get(a.id) ?? 0), 0) / hhAccounts.length)
+      : 100;
+    console.log(`  * ${hh.name}: ${hhScore}%`);
   }
 
   console.log(`\n- Findings Created:            ${findingsCount}`);
   console.log(`- Households Recalculated:     ${dbHouseholds.length}`);
-  console.log(`- Final Advisor Score (Index):  ${assessment?.overallReadinessScore}%`);
+  console.log(`\n- final advisor score: ${assessment?.overallReadinessScore}%`);
   console.log('========================================\n');
+
+  // Log Carter Household calculations
+  const carterHh = dbHouseholds.find(h => h.name === 'Carter Household');
+  if (carterHh) {
+    console.log('========================================================================');
+    console.log('--- EVIDENCE AND SCORE CALCULATIONS FOR CARTER HOUSEHOLD ---');
+    console.log(`Household: "${carterHh.name}" (Total AUM: $${((carterHh.totalAum || 0) * 1000000).toLocaleString()})`);
+    
+    let totalAccScoreSum = 0;
+    const carterAccounts = dbAccounts.filter(a => a.householdId === carterHh.id);
+    for (const acc of carterAccounts) {
+      const accChecklist = allChecklistItems.filter(item => item.accountId === acc.id);
+      console.log(`\n  * Account: "${acc.name}" (Type: ${acc.type}, Registration: ${acc.registration}, Custodian: ${acc.custodian}, AUM: $${(acc.value || 0).toLocaleString()})`);
+      console.log('    Checklist Items Evidence:');
+      
+      let totalWeight = 0;
+      let weightedScoreSum = 0;
+      let missingCriticalCount = 0;
+
+      accChecklist.forEach(item => {
+        if (item.status === 'Not Applicable') return;
+        const weight = item.requirement?.weight ?? 1.0;
+        totalWeight += weight;
+
+        let multiplier = 0.0;
+        if (['Present', 'Verified', 'Inferred'].includes(item.status)) {
+          multiplier = 1.0;
+        } else if (item.status === 'Unknown') {
+          multiplier = 0.5;
+        } else if (item.status === 'Needs Review') {
+          multiplier = 0.25;
+        } else if (item.status === 'Missing') {
+          multiplier = 0.0;
+          if (item.requirement?.critical) {
+            missingCriticalCount++;
+          }
+        }
+        weightedScoreSum += weight * multiplier;
+        console.log(`      - [${item.status}] ${item.itemName} (Weight: ${weight})`);
+        console.log(`        Evidence: "${item.notes}"`);
+      });
+
+      const completion = totalWeight > 0 ? (weightedScoreSum / totalWeight) * 100 : 100;
+      const score = Math.max(0, Math.min(100, Math.round(completion - missingCriticalCount * 15)));
+      totalAccScoreSum += score;
+      console.log(`    Account Completion Score: ${completion.toFixed(1)}%`);
+      console.log(`    Account Readiness Score: ${score}% (Critical Missing Penalty Count: ${missingCriticalCount})`);
+    }
+
+    const calculatedHhScore = carterAccounts.length > 0
+      ? Math.round(totalAccScoreSum / carterAccounts.length)
+      : 100;
+    console.log(`\n  * Household Readiness Score: ${calculatedHhScore}% (Average of its accounts)`);
+    console.log('========================================================================\n');
+  }
 }
 
 main()
