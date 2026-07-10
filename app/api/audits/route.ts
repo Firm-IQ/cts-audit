@@ -179,7 +179,7 @@ export async function POST(request: Request) {
     const evaluatedRequirementsCount = await prisma.accountChecklistItem.count({
       where: {
         account: { household: { advisorId } },
-        status: { in: ['Present', 'Missing', 'Needs Review'] }
+        status: { in: ['Present', 'Verified', 'Inferred', 'Missing', 'Needs Review'] }
       }
     });
 

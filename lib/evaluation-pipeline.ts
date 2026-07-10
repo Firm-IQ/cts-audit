@@ -9,11 +9,62 @@ function doesRequirementApply(appliesToAccountTypes: string, accType: string, ac
   if (normalizedApplies === 'all') return true;
 
   const appliesList = normalizedApplies.split(',').map(s => s.trim().toLowerCase());
-  const typeMatch = appliesList.includes(accType.trim().toLowerCase());
-  const regMatch = accRegistration ? appliesList.includes(accRegistration.trim().toLowerCase()) : false;
+  
+  // Robust substring/inclusion checks (e.g. Traditional IRA includes ira, Roth IRA includes roth ira)
+  const typeMatch = appliesList.some(appType => 
+    accType.toLowerCase().includes(appType) || appType.includes(accType.toLowerCase())
+  );
+  
+  const regMatch = accRegistration ? appliesList.some(appReg => 
+    accRegistration.toLowerCase().includes(appReg) || appReg.includes(accRegistration.toLowerCase())
+  ) : false;
 
   return typeMatch || regMatch;
 }
+
+const checklistItemsToSeed = [
+  { key: 'client_addressCurrent', name: 'Address Current', category: 'Client Information', appliesToAccountTypes: 'All', required: true, critical: true, displayOrder: 1 },
+  { key: 'client_emailCurrent', name: 'Email Current', category: 'Client Information', appliesToAccountTypes: 'All', required: true, critical: true, displayOrder: 2 },
+  { key: 'client_phoneCurrent', name: 'Phone Current', category: 'Client Information', appliesToAccountTypes: 'All', required: true, critical: true, displayOrder: 3 },
+  { key: 'client_trustedContact', name: 'Trusted Contact', category: 'Client Information', appliesToAccountTypes: 'All', required: false, critical: false, displayOrder: 4 },
+  { key: 'client_relationshipsVerified', name: 'Household Relationships Verified', category: 'Client Information', appliesToAccountTypes: 'All', required: true, critical: false, displayOrder: 5 },
+  { key: 'kyc_riskTolerance', name: 'Risk Tolerance Current', category: 'KYC', appliesToAccountTypes: 'All', required: true, critical: true, displayOrder: 6 },
+  { key: 'kyc_investmentObjectives', name: 'Investment Objectives Current', category: 'KYC', appliesToAccountTypes: 'All', required: true, critical: true, displayOrder: 7 },
+  { key: 'kyc_timeHorizon', name: 'Time Horizon', category: 'KYC', appliesToAccountTypes: 'All', required: true, critical: false, displayOrder: 8 },
+  { key: 'kyc_liquidityNeeds', name: 'Liquidity Needs', category: 'KYC', appliesToAccountTypes: 'All', required: true, critical: false, displayOrder: 9 },
+  { key: 'kyc_incomeNetWorth', name: 'Income / Net Worth Current', category: 'KYC', appliesToAccountTypes: 'All', required: true, critical: false, displayOrder: 10 },
+  { key: 'kyc_lastReview', name: 'Last Review Current', category: 'KYC', appliesToAccountTypes: 'All', required: true, critical: false, displayOrder: 11 },
+  { key: 'banking_achAuthorization', name: 'ACH Authorization', category: 'Banking', appliesToAccountTypes: 'All', required: false, critical: false, displayOrder: 12 },
+  { key: 'banking_voidedCheck', name: 'Voided Check / Bank Verification', category: 'Banking', appliesToAccountTypes: 'All', required: false, critical: false, displayOrder: 13 },
+  { key: 'banking_standingInstructions', name: 'Standing Instructions', category: 'Banking', appliesToAccountTypes: 'All', required: false, critical: false, displayOrder: 14 },
+  { key: 'doc_advisoryAgreement', name: 'Advisory Agreement', category: 'Account Documents', appliesToAccountTypes: 'All', required: true, critical: true, displayOrder: 15 },
+  { key: 'doc_accountApplication', name: 'Account Application', category: 'Account Documents', appliesToAccountTypes: 'All', required: true, critical: true, displayOrder: 16 },
+  { key: 'doc_beneficiaryDesignation', name: 'Beneficiary Designation', category: 'Account Documents', appliesToAccountTypes: 'All', required: true, critical: true, displayOrder: 17 },
+  { key: 'doc_transferRestrictions', name: 'Transfer Restrictions Reviewed', category: 'Account Documents', appliesToAccountTypes: 'All', required: false, critical: false, displayOrder: 18 },
+  { key: 'trust_certification', name: 'Trust Certification', category: 'Trust Accounts', appliesToAccountTypes: 'Trust', required: true, critical: false, displayOrder: 19 },
+  { key: 'trust_trusteePages', name: 'Trustee Pages', category: 'Trust Accounts', appliesToAccountTypes: 'Trust', required: true, critical: false, displayOrder: 20 },
+  { key: 'trust_successorTrustee', name: 'Successor Trustee', category: 'Trust Accounts', appliesToAccountTypes: 'Trust', required: false, critical: false, displayOrder: 21 },
+  { key: 'trust_taxId', name: 'Tax ID Verified', category: 'Trust Accounts', appliesToAccountTypes: 'Trust', required: true, critical: false, displayOrder: 22 },
+  { key: 'entity_articles', name: 'Articles', category: 'Entity Accounts', appliesToAccountTypes: 'Entity', required: true, critical: false, displayOrder: 23 },
+  { key: 'entity_operatingAgreement', name: 'Operating Agreement', category: 'Entity Accounts', appliesToAccountTypes: 'Entity', required: true, critical: false, displayOrder: 24 },
+  { key: 'entity_ein', name: 'EIN', category: 'Entity Accounts', appliesToAccountTypes: 'Entity', required: true, critical: false, displayOrder: 25 },
+  { key: 'entity_resolution', name: 'Corporate Resolution', category: 'Entity Accounts', appliesToAccountTypes: 'Entity', required: true, critical: false, displayOrder: 26 },
+  { key: 'entity_signers', name: 'Authorized Signers', category: 'Entity Accounts', appliesToAccountTypes: 'Entity', required: true, critical: false, displayOrder: 27 },
+  { key: 'estate_deathCertificate', name: 'Death Certificate', category: 'Estate Accounts', appliesToAccountTypes: 'Estate', required: true, critical: false, displayOrder: 28 },
+  { key: 'estate_letters', name: 'Letters Testamentary', category: 'Estate Accounts', appliesToAccountTypes: 'Estate', required: true, critical: false, displayOrder: 29 },
+  { key: 'estate_executor', name: 'Executor Documentation', category: 'Estate Accounts', appliesToAccountTypes: 'Estate', required: true, critical: false, displayOrder: 30 },
+  { key: 'power_poa', name: 'Power of Attorney', category: 'Powers', appliesToAccountTypes: 'All', required: false, critical: false, displayOrder: 31 },
+  { key: 'power_guardianship', name: 'Guardianship', category: 'Powers', appliesToAccountTypes: 'All', required: false, critical: false, displayOrder: 32 },
+  { key: 'power_conservatorship', name: 'Conservatorship', category: 'Powers', appliesToAccountTypes: 'All', required: false, critical: false, displayOrder: 33 },
+  { key: 'retire_ira', name: 'IRA Documentation', category: 'Retirement', appliesToAccountTypes: 'IRA,Roth IRA,Inherited IRA,SEP IRA,SIMPLE IRA', required: true, critical: false, displayOrder: 34 },
+  { key: 'retire_inheritedIra', name: 'Inherited IRA Documentation', category: 'Retirement', appliesToAccountTypes: 'Inherited IRA', required: true, critical: false, displayOrder: 35 },
+  { key: 'retire_beneficiary', name: 'Beneficiary Review', category: 'Retirement', appliesToAccountTypes: 'IRA,Roth IRA,Inherited IRA,SEP IRA,SIMPLE IRA,401(k)', required: true, critical: false, displayOrder: 36 },
+  { key: 'retire_rmd', name: 'RMD Status', category: 'Retirement', appliesToAccountTypes: 'IRA,Roth IRA,Inherited IRA,SEP IRA,SIMPLE IRA,401(k)', required: false, critical: false, displayOrder: 37 },
+  { key: 'special_annuities', name: 'Annuities', category: 'Special Holdings', appliesToAccountTypes: 'Annuity', required: false, critical: false, displayOrder: 38 },
+  { key: 'special_alts', name: 'Alternative Investments', category: 'Special Holdings', appliesToAccountTypes: 'Alternative Investment', required: false, critical: false, displayOrder: 39 },
+  { key: 'special_directBusiness', name: 'Direct Business', category: 'Special Holdings', appliesToAccountTypes: 'Direct Business', required: false, critical: false, displayOrder: 40 },
+  { key: 'special_restrictedAssets', name: 'Restricted Assets', category: 'Special Holdings', appliesToAccountTypes: 'All', required: false, critical: false, displayOrder: 41 },
+];
 
 /**
  * Classifies requirement items into 'Verified', 'Inferred', 'Unknown', or 'Not Applicable'.
@@ -99,14 +150,51 @@ export async function runEvaluationPipeline(advisorId: string, authorFullName: s
     }
   });
 
-  // 2. Fetch all active requirements
-  const activeRequirements = await prisma.requirementLibrary.findMany({
+  // 2. Fetch all active requirements (with self-healing fallback)
+  let activeRequirements = await prisma.requirementLibrary.findMany({
     where: { active: true }
   });
+
+  if (activeRequirements.length === 0) {
+    console.log('Requirement library is empty in database. Seeding active requirements first...');
+    for (const item of checklistItemsToSeed) {
+      await prisma.requirementLibrary.upsert({
+        where: { id: item.key },
+        update: {
+          name: item.name,
+          category: item.category,
+          appliesToAccountTypes: item.appliesToAccountTypes,
+          required: item.required,
+          critical: item.critical,
+          displayOrder: item.displayOrder
+        },
+        create: {
+          id: item.key,
+          name: item.name,
+          description: `${item.name} requirements.`,
+          category: item.category,
+          appliesToAccountTypes: item.appliesToAccountTypes,
+          required: item.required,
+          critical: item.critical,
+          displayOrder: item.displayOrder
+        }
+      });
+    }
+    activeRequirements = await prisma.requirementLibrary.findMany({
+      where: { active: true }
+    });
+  }
+
+  console.log(`- Active requirements found: ${activeRequirements.length}`);
 
   // 3. Upsert Account Checklist Items
   console.log('Generating/updating account checklist items...');
   for (const acc of accounts) {
+    const matchedCount = activeRequirements.filter(req => doesRequirementApply(req.appliesToAccountTypes, acc.type, acc.registration)).length;
+    if (matchedCount === 0) {
+      console.log(`WARNING: No matching requirements found for account type "${acc.type}" (Account: "${acc.name}", Registration: "${acc.registration || 'None'}"). Matching failed because no active Requirement Library entries apply to this account type/registration.`);
+    }
+
     for (const req of activeRequirements) {
       const isApplicable = doesRequirementApply(req.appliesToAccountTypes, acc.type, acc.registration);
 

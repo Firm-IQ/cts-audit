@@ -153,7 +153,7 @@ export default function LiveReportClient({
   const isAssessmentEvaluated = useMemo(() => {
     return households.some(hh =>
       hh.accounts.some(acc =>
-        acc.checklistItems?.some(item => ['Present', 'Missing', 'Needs Review'].includes(item.status))
+        acc.checklistItems?.some(item => ['Present', 'Verified', 'Inferred', 'Missing', 'Needs Review'].includes(item.status))
       )
     );
   }, [households]);

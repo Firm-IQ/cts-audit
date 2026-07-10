@@ -174,10 +174,13 @@ async function main() {
   await runEvaluationPipeline(advisor.id, 'Render Deploy Backfill');
 
   // 3. Query final stats for reporting
-  const checklistItemsCount = await prisma.accountChecklistItem.count({
-    where: { account: { household: { advisorId: advisor.id } } }
+  const allChecklistItems = await prisma.accountChecklistItem.findMany({
+    where: { account: { household: { advisorId: advisor.id } } },
+    include: { requirement: true, account: true }
   });
-  
+
+  const checklistItemsCount = allChecklistItems.length;
+
   const assessment = await prisma.assessment.findFirst({
     where: { advisorId: advisor.id },
     orderBy: { createdAt: 'desc' }
@@ -187,13 +190,96 @@ async function main() {
     where: { assessmentId: assessment?.id }
   });
 
-  console.log('\n--- BACKFILL COMPLETED SUCCESSFULLY ---');
-  console.log(`- Accounts Processed:    ${dbAccounts.length}`);
-  console.log(`- Checklist Items:       ${checklistItemsCount}`);
-  console.log(`- Findings Created:      ${findingsCount}`);
-  console.log(`- Households Recalculated: ${dbHouseholds.length}`);
-  console.log(`- Final Advisor Score:   ${assessment?.overallReadinessScore}%`);
-  console.log('----------------------------------------\n');
+  // Calculate matched requirements per account type
+  const matchStats: Record<string, number> = {};
+  for (const acc of dbAccounts) {
+    const accMatches = activeRequirements.filter(req => {
+      const normalizedApplies = req.appliesToAccountTypes.trim().toLowerCase();
+      if (normalizedApplies === 'all') return true;
+      const appliesList = normalizedApplies.split(',').map(s => s.trim().toLowerCase());
+      return appliesList.some(appType => 
+        acc.type.toLowerCase().includes(appType) || appType.includes(acc.type.toLowerCase())
+      ) || (acc.registration ? appliesList.some(appReg => 
+        acc.registration!.toLowerCase().includes(appReg) || appReg.includes(acc.registration!.toLowerCase())
+      ) : false);
+    }).length;
+    matchStats[acc.type] = (matchStats[acc.type] || 0) + accMatches;
+  }
+
+  // Calculate checklist items by status
+  const statusStats: Record<string, number> = {};
+  for (const item of allChecklistItems) {
+    statusStats[item.status] = (statusStats[item.status] || 0) + 1;
+  }
+
+  console.log('\n========================================');
+  console.log('--- BACKFILL COMPLETED SUCCESSFULLY ---');
+  console.log('========================================');
+  console.log(`- Active Requirements Found:  ${activeRequirements.length}`);
+  
+  console.log('\n- Requirements Matched Per Account Type:');
+  for (const [type, count] of Object.entries(matchStats)) {
+    console.log(`  * ${type}: ${count} total matches`);
+  }
+
+  console.log(`\n- Accounts Processed:          ${dbAccounts.length}`);
+  console.log(`- Checklist Items Created:     ${checklistItemsCount}`);
+
+  console.log('\n- Checklist Items By Status:');
+  for (const [status, count] of Object.entries(statusStats)) {
+    console.log(`  * ${status}: ${count}`);
+  }
+
+  console.log('\n- Account Scores (Sample of 10):');
+  for (const acc of dbAccounts.slice(0, 10)) {
+    const accChecklist = allChecklistItems.filter(item => item.accountId === acc.id);
+    let totalWeight = 0;
+    let completedWeight = 0;
+    accChecklist.forEach(item => {
+      if (item.status === 'Not Applicable') return;
+      const weight = item.requirement?.weight ?? 1.0;
+      totalWeight += weight;
+      if (['Present', 'Verified', 'Inferred'].includes(item.status)) {
+        completedWeight += weight;
+      }
+    });
+    const completionScore = totalWeight > 0 ? Math.round((completedWeight / totalWeight) * 100) : 100;
+    console.log(`  * Account "${acc.name}" (${acc.type}): Score = ${completionScore}% | Status = ${acc.readinessStatus}`);
+  }
+
+  console.log('\n- Household Scores:');
+  for (const hh of dbHouseholds) {
+    const hhChecklist = allChecklistItems.filter(item => item.account.householdId === hh.id);
+    let totalReadiness = 0;
+    const hhAccounts = dbAccounts.filter(a => a.householdId === hh.id);
+    hhAccounts.forEach(acc => {
+      const accChecklist = allChecklistItems.filter(item => item.accountId === acc.id);
+      let totalWeight = 0;
+      let completedWeight = 0;
+      accChecklist.forEach(item => {
+        if (item.status === 'Not Applicable') return;
+        const weight = item.requirement?.weight ?? 1.0;
+        totalWeight += weight;
+        if (['Present', 'Verified', 'Inferred'].includes(item.status)) {
+          completedWeight += weight;
+        }
+      });
+      const completion = totalWeight > 0 ? Math.round((completedWeight / totalWeight) * 100) : 100;
+      const missingCritical = accChecklist.filter(item => {
+        if (item.status !== 'Missing') return false;
+        return item.requirement?.critical || ['client_addressCurrent', 'client_emailCurrent', 'client_phoneCurrent', 'kyc_riskTolerance', 'kyc_investmentObjectives', 'doc_advisoryAgreement', 'doc_accountApplication', 'doc_beneficiaryDesignation'].includes(item.itemKey);
+      }).length;
+      const readiness = Math.max(0, Math.min(100, completion - (missingCritical * 15)));
+      totalReadiness += readiness;
+    });
+    const hhScore = hhAccounts.length > 0 ? Math.round(totalReadiness / hhAccounts.length) : 0;
+    console.log(`  * Household "${hh.name}": Score = ${hhScore}% | Status = ${hh.readinessStatus}`);
+  }
+
+  console.log(`\n- Findings Created:            ${findingsCount}`);
+  console.log(`- Households Recalculated:     ${dbHouseholds.length}`);
+  console.log(`- Final Advisor Score (Index):  ${assessment?.overallReadinessScore}%`);
+  console.log('========================================\n');
 }
 
 main()

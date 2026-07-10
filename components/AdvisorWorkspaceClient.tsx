@@ -641,7 +641,7 @@ export default function AdvisorWorkspaceClient({
         : (item.requirement?.weight ?? 1.0);
 
       totalWeight += weight;
-      if (item.status === 'Present') {
+      if (['Present', 'Verified', 'Inferred'].includes(item.status)) {
         completedWeight += weight;
       }
     });
@@ -1121,7 +1121,7 @@ export default function AdvisorWorkspaceClient({
     if (!households) return false;
     return households.some(hh =>
       hh.accounts?.some(acc =>
-        acc.checklistItems?.some(item => ['Present', 'Missing', 'Needs Review'].includes(item.status))
+        acc.checklistItems?.some(item => ['Present', 'Verified', 'Inferred', 'Missing', 'Needs Review'].includes(item.status))
       )
     );
   }, [households]);
@@ -2743,7 +2743,7 @@ export default function AdvisorWorkspaceClient({
                   else if (hh.readinessStatus === 'Not Ready') statusBadgeVariant = 'critical';
 
                   const hhHasEvaluated = hh.accounts.some(acc =>
-                    acc.checklistItems?.some(item => ['Present', 'Missing', 'Needs Review'].includes(item.status))
+                    acc.checklistItems?.some(item => ['Present', 'Verified', 'Inferred', 'Missing', 'Needs Review'].includes(item.status))
                   );
                   const hhReadinessScore = calculateHouseholdReadiness(hh);
                   let ratingClass = 'text-rose-400';
@@ -2838,7 +2838,7 @@ export default function AdvisorWorkspaceClient({
                                     else if (acc.readinessStatus === 'Not Ready') accBadgeVariant = 'critical';
 
                                     const accHasEvaluated = acc.checklistItems?.some(item =>
-                                       ['Present', 'Missing', 'Needs Review'].includes(item.status)
+                                       ['Present', 'Verified', 'Inferred', 'Missing', 'Needs Review'].includes(item.status)
                                      );
                                     const accComp = calculateAccountCompletion(acc.checklistItems, acc.custodian);
 
@@ -3750,6 +3750,8 @@ export default function AdvisorWorkspaceClient({
                                     className="bg-[#0b1329] border border-slate-700 rounded px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-[#d4af37] w-full sm:w-40"
                                   >
                                     <option value="Unknown">Unknown</option>
+                                    <option value="Verified">Verified</option>
+                                    <option value="Inferred">Inferred</option>
                                     <option value="Present">Present</option>
                                     <option value="Missing">Missing</option>
                                     <option value="Needs Review">Needs Review</option>
