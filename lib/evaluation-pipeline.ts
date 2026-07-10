@@ -483,14 +483,21 @@ export async function runEvaluationPipeline(advisorId: string, authorFullName: s
   // 3. Upsert Account Checklist Items
   console.log('Generating/updating account checklist items...');
   for (const acc of accounts) {
-    const matchedCount = activeRequirements.filter(req => doesRequirementApply(req.id, acc.type, acc.registration)).length;
-    if (matchedCount === 0) {
+    const matchedRequirements = activeRequirements.filter(req => doesRequirementApply(req.id, acc.type, acc.registration));
+    if (matchedRequirements.length === 0) {
       console.log(`WARNING: No matching requirements found for account type "${acc.type}" (Account: "${acc.name}", Registration: "${acc.registration || 'None'}"). Matching failed because no active Requirement Library entries apply to this account type/registration.`);
     }
 
-    for (const req of activeRequirements) {
-      const isApplicable = doesRequirementApply(req.id, acc.type, acc.registration);
+    // Load only requirements mapped to that account type; exclude non-applicable completely
+    const matchedReqIds = matchedRequirements.map(req => req.id);
+    await prisma.accountChecklistItem.deleteMany({
+      where: {
+        accountId: acc.id,
+        itemKey: { notIn: matchedReqIds }
+      }
+    });
 
+    for (const req of matchedRequirements) {
       // Check if item already exists in database
       const existingItem = await prisma.accountChecklistItem.findUnique({
         where: {
@@ -502,14 +509,14 @@ export async function runEvaluationPipeline(advisorId: string, authorFullName: s
       });
 
       // Default status & evidence
-      let { status: targetStatus, evidence: targetEvidence } = getInitialStatusAndEvidence(req.id, isApplicable, acc);
+      let { status: targetStatus, evidence: targetEvidence } = getInitialStatusAndEvidence(req.id, true, acc);
 
-      // Preserve existing seeded status if it is audited (Present, Verified, Missing, Needs Review)
-      if (existingItem && ['Present', 'Verified', 'Missing', 'Needs Review'].includes(existingItem.status)) {
+      // Preserve existing seeded status if it is audited (Present, Verified, Missing, Needs Review, Needs Attention)
+      if (existingItem && ['Present', 'Verified', 'Missing', 'Needs Review', 'Needs Attention'].includes(existingItem.status)) {
         targetStatus = existingItem.status;
         targetEvidence = existingItem.notes || (existingItem.status === 'Missing'
           ? 'Review of physical/legal folder confirms document is missing.'
-          : existingItem.status === 'Needs Review'
+          : ['Needs Review', 'Needs Attention'].includes(existingItem.status)
             ? 'Document is present in physical folder but requires signatures/dates review.'
             : 'Audited and verified document completeness.');
       }

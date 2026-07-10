@@ -2876,16 +2876,17 @@ export default function AdvisorWorkspaceClient({
                 households.map((hh) => {
                   const isExpanded = expandedHouseholds[hh.id];
                   
+                  const hhReadinessScore = calculateHouseholdReadiness(hh);
+                  const hhRating = getScoreRating(hhReadinessScore);
+
                   let statusBadgeVariant: 'ready' | 'advisory' | 'critical' | 'neutral' = 'neutral';
-                  if (hh.readinessStatus === 'Ready') statusBadgeVariant = 'ready';
-                  else if (hh.readinessStatus === 'Minor Cleanup') statusBadgeVariant = 'advisory';
-                  else if (hh.readinessStatus === 'Significant Cleanup') statusBadgeVariant = 'advisory';
-                  else if (hh.readinessStatus === 'Not Ready') statusBadgeVariant = 'critical';
+                  if (hhRating.label === 'Ready') statusBadgeVariant = 'ready';
+                  else if (hhRating.label === 'Minor Cleanup' || hhRating.label === 'Significant Cleanup') statusBadgeVariant = 'advisory';
+                  else if (hhRating.label === 'Not Ready') statusBadgeVariant = 'critical';
 
                   const hhHasEvaluated = hh.accounts.some(acc =>
-                    acc.checklistItems?.some(item => ['Present', 'Verified', 'Inferred', 'Missing', 'Needs Review'].includes(item.status))
+                    acc.checklistItems?.some(item => ['Present', 'Verified', 'Inferred', 'Missing', 'Needs Review', 'Needs Attention'].includes(item.status))
                   );
-                  const hhReadinessScore = calculateHouseholdReadiness(hh);
                   let ratingClass = 'text-rose-400';
                   if (hhReadinessScore >= 80) ratingClass = 'text-emerald-400';
                   else if (hhReadinessScore >= 60) ratingClass = 'text-amber-400';
@@ -2916,7 +2917,7 @@ export default function AdvisorWorkspaceClient({
                             Rev: {hh.revenue !== null ? `$${hh.revenue.toLocaleString()}` : 'N/A'}
                           </Badge>
                           <Badge variant={statusBadgeVariant} className="font-bold uppercase tracking-wider text-[10px]">
-                            {hh.readinessStatus}
+                            {hhRating.label}
                           </Badge>
                           
                           {/* Action controls */}
@@ -2971,16 +2972,17 @@ export default function AdvisorWorkspaceClient({
                                 </thead>
                                 <tbody className="divide-y divide-slate-800">
                                   {hh.accounts.map((acc) => {
+                                    const accScore = calculateAccountReadiness(acc.checklistItems || [], acc.custodian);
+                                    const accRating = getScoreRating(accScore);
+
                                     let accBadgeVariant: 'ready' | 'advisory' | 'critical' | 'neutral' = 'neutral';
-                                    if (acc.readinessStatus === 'Ready') accBadgeVariant = 'ready';
-                                    else if (acc.readinessStatus === 'Needs Review') accBadgeVariant = 'advisory';
-                                    else if (acc.readinessStatus === 'Missing Items') accBadgeVariant = 'critical';
-                                    else if (acc.readinessStatus === 'Not Ready') accBadgeVariant = 'critical';
+                                    if (accRating.label === 'Ready') accBadgeVariant = 'ready';
+                                    else if (accRating.label === 'Minor Cleanup' || accRating.label === 'Significant Cleanup') accBadgeVariant = 'advisory';
+                                    else if (accRating.label === 'Not Ready') accBadgeVariant = 'critical';
 
                                     const accHasEvaluated = acc.checklistItems?.some(item =>
-                                       ['Present', 'Verified', 'Inferred', 'Missing', 'Needs Review'].includes(item.status)
+                                       ['Present', 'Verified', 'Inferred', 'Missing', 'Needs Review', 'Needs Attention'].includes(item.status)
                                      );
-                                    const accComp = calculateAccountCompletion(acc.checklistItems, acc.custodian);
 
                                     return (
                                       <tr key={acc.id} className="hover:bg-slate-800/10 transition-colors">
@@ -2992,11 +2994,11 @@ export default function AdvisorWorkspaceClient({
                                         <td className="px-4 py-3 text-slate-400">{acc.custodian || '—'}</td>
                                         <td className="px-4 py-3 text-slate-400">{acc.registration || '—'}</td>
                                         <td className="px-4 py-3 font-semibold text-slate-300">
-                                          {accHasEvaluated ? `${accComp}%` : 'Pending'}
+                                          {accHasEvaluated ? `${accScore}%` : 'Pending'}
                                         </td>
                                         <td className="px-4 py-3">
                                           <Badge variant={accBadgeVariant} className="text-[9px] font-bold py-0.5 px-1.5 uppercase">
-                                            {acc.readinessStatus}
+                                            {accRating.label}
                                           </Badge>
                                         </td>
                                         <td className="px-4 py-3 text-right">

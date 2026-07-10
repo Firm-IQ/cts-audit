@@ -436,7 +436,7 @@ export default function DashboardClient({ initialAdvisors }: { initialAdvisors: 
                               {latestScore}%
                             </span>
                             <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">
-                              {rating.rating}
+                              {rating.label}
                             </span>
                           </div>
                         ) : (

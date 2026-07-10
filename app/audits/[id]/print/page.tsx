@@ -181,7 +181,7 @@ export default async function PrintReportPage(props: PrintPageProps) {
               <span className="text-slate-550 uppercase tracking-wider text-[9px] font-bold block font-sans">Assessment Rating</span>
               <h3 className="text-lg font-bold text-[#0b1329] flex items-center gap-2 font-sans">
                 <span className={`w-3 h-3 rounded-full inline-block ${
-                  rating.rating === 'Green' ? 'bg-emerald-500' : rating.rating === 'Yellow' ? 'bg-amber-500' : 'bg-rose-500'
+                  rating.rating === 'Green' ? 'bg-emerald-500' : rating.rating === 'Yellow' ? 'bg-amber-500' : rating.rating === 'Orange' ? 'bg-orange-500' : 'bg-rose-500'
                 }`}></span>
                 {rating.label}
               </h3>
@@ -191,6 +191,8 @@ export default async function PrintReportPage(props: PrintPageProps) {
                   ? 'a very clean operational profile with low compliance friction. The team is ready to begin custodian mapping.'
                   : rating.rating === 'Yellow'
                   ? 'moderate database gaps, incomplete KYC files, or minor legal questions that require addressing prior to client solicitation.'
+                  : rating.rating === 'Orange'
+                  ? 'significant database gaps, outstanding document files, or legal cleanup requirements that require addressing prior to transition.'
                   : 'severe operational risks, high alternative asset complexity, or unreviewed employment restrictive covenants. Action must be taken.'
                 }
               </p>

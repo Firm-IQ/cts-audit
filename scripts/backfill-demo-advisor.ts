@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { runEvaluationPipeline, doesRequirementApply } from '../lib/evaluation-pipeline';
+import { getScoreRating } from '../lib/scoring';
 
 const prisma = new PrismaClient();
 
@@ -257,6 +258,7 @@ async function main() {
   let countBelow60 = 0;
 
   const accountScores = new Map<string, number>();
+  console.log('\n--- DETAILED ACCOUNT APPLICABILITY AND SCORING LOGS ---');
   for (const acc of dbAccounts) {
     const accChecklist = allChecklistItems.filter(item => item.accountId === acc.id);
     let totalWeight = 0;
@@ -285,6 +287,21 @@ async function main() {
     const completion = totalWeight > 0 ? (weightedScoreSum / totalWeight) * 100 : 100;
     const score = Math.max(0, Math.min(100, Math.round(completion - missingCriticalCount * 15)));
     accountScores.set(acc.id, score);
+
+    // Categories
+    const categories = ['Client Information', 'KYC', 'Banking', 'Account Documents', 'Trust Accounts', 'Entity Accounts', 'Estate Accounts', 'Powers', 'Retirement', 'Special Holdings'];
+    const activeCategories = Array.from(new Set(accChecklist.map(item => item.requirement?.category || item.itemName)));
+    const excludedCategories = categories.filter(c => !activeCategories.includes(c));
+
+    // Derived label
+    const rating = getScoreRating(score);
+
+    console.log(`Account Type: ${acc.type}`);
+    console.log(`  * Account Name: "${acc.name}"`);
+    console.log(`  * Number of Applicable Requirements: ${accChecklist.length}`);
+    console.log(`  * Excluded Categories: ${excludedCategories.join(', ') || 'None'}`);
+    console.log(`  * Calculated Score: ${score}%`);
+    console.log(`  * Derived Readiness Label: ${rating.label}`);
 
     if (score === 100) count100++;
     else if (score >= 90) count90to99++;
@@ -350,10 +367,8 @@ async function main() {
         let multiplier = 0.0;
         if (['Present', 'Verified', 'Inferred'].includes(item.status)) {
           multiplier = 1.0;
-        } else if (item.status === 'Unknown') {
+        } else if (['Needs Attention', 'Unknown', 'Needs Review'].includes(item.status)) {
           multiplier = 0.5;
-        } else if (item.status === 'Needs Review') {
-          multiplier = 0.25;
         } else if (item.status === 'Missing') {
           multiplier = 0.0;
           if (item.requirement?.critical) {

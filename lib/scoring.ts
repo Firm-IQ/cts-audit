@@ -140,12 +140,14 @@ export function calculateReadinessScores(data: AuditInput): CalculatedReadinessS
   };
 }
 
-export function getScoreRating(score: number): { rating: "Green" | "Yellow" | "Red"; label: string; bgClass: string; textClass: string; borderClass: string } {
+export function getScoreRating(score: number): { rating: "Green" | "Yellow" | "Orange" | "Red"; label: string; bgClass: string; textClass: string; borderClass: string } {
   if (score >= 80) {
-    return { rating: "Green", label: "Ready / Low Risk", bgClass: "bg-emerald-950/40", textClass: "text-emerald-400", borderClass: "border-emerald-500/30" };
+    return { rating: "Green", label: "Ready", bgClass: "bg-emerald-950/40", textClass: "text-emerald-400", borderClass: "border-emerald-500/30" };
   } else if (score >= 60) {
-    return { rating: "Yellow", label: "Advisory / Moderate Risk", bgClass: "bg-amber-950/40", textClass: "text-amber-400", borderClass: "border-amber-500/30" };
+    return { rating: "Yellow", label: "Minor Cleanup", bgClass: "bg-amber-950/40", textClass: "text-amber-400", borderClass: "border-amber-500/30" };
+  } else if (score >= 40) {
+    return { rating: "Orange", label: "Significant Cleanup", bgClass: "bg-orange-950/40", textClass: "text-[#d4af37]", borderClass: "border-[#d4af37]/30" };
   } else {
-    return { rating: "Red", label: "Critical / High Risk", bgClass: "bg-rose-950/40", textClass: "text-rose-400", borderClass: "border-rose-500/30" };
+    return { rating: "Red", label: "Not Ready", bgClass: "bg-rose-950/40", textClass: "text-rose-400", borderClass: "border-rose-500/30" };
   }
 }

@@ -342,7 +342,7 @@ export default function AuditDetailClient({ audit }: { audit: AuditDetail }) {
           <Card className="text-center p-6 flex flex-col items-center">
             <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4">Overall Know Your Book™ Index</h2>
             <RadialProgress value={audit.overallReadinessScore} size={150} strokeWidth={12} className="mb-4" />
-            <Badge variant={rating.rating === 'Green' ? 'ready' : rating.rating === 'Yellow' ? 'advisory' : 'critical'} className="mb-2">
+            <Badge variant={rating.rating === 'Green' ? 'ready' : (rating.rating === 'Yellow' || rating.rating === 'Orange') ? 'advisory' : 'critical'} className="mb-2">
               {rating.label}
             </Badge>
             <p className="text-xs text-slate-400 mt-2 px-4">
