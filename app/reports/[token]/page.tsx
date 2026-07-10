@@ -8,7 +8,7 @@ export default async function LiveReportPage(
   const { token } = await props.params;
 
   // 1. Fetch Advisor, latest assessment, households, accounts, and checklist items
-  const advisor = await prisma.advisor.findUnique({
+  const advisor = await prisma.advisor.findFirst({
     where: { reportToken: token },
     include: {
       assessments: {

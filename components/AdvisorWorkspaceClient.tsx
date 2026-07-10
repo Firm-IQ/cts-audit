@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Briefcase, Plus, FileText, Edit, Printer, CheckSquare, File, Phone, BookOpen, Clock, Users, Building, Mail, Trash2, Pin, Lock, FileUp, AlertTriangle, Home, ChevronDown, ChevronUp } from 'lucide-react';
+import { ArrowLeft, Briefcase, Plus, FileText, Edit, Printer, CheckSquare, File, Phone, BookOpen, Clock, Users, Building, Mail, Trash2, Pin, Lock, FileUp, AlertTriangle, Home, ChevronDown, ChevronUp, Shield, CheckCircle2 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, Badge } from '@/components/ui';
 import { getScoreRating } from '@/lib/scoring';
 
@@ -1117,6 +1117,15 @@ export default function AdvisorWorkspaceClient({
   const [households, setHouseholds] = useState<Household[]>(advisor.householdRecords || []);
   const [expandedHouseholds, setExpandedHouseholds] = useState<Record<string, boolean>>({});
 
+  const isAssessmentEvaluated = React.useMemo(() => {
+    if (!households) return false;
+    return households.some(hh =>
+      hh.accounts?.some(acc =>
+        acc.checklistItems?.some(item => ['Present', 'Missing', 'Needs Review'].includes(item.status))
+      )
+    );
+  }, [households]);
+
   // Synchronize component states when advisor prop gets refreshed on server
   React.useEffect(() => {
     setHouseholds(advisor.householdRecords || []);
@@ -1778,6 +1787,133 @@ export default function AdvisorWorkspaceClient({
         {activeTab === 'overview' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-6">
+              {!isAssessmentEvaluated && (
+                <Card className="border-[#d4af37]/40 bg-slate-950/20">
+                  <CardHeader className="border-b border-slate-800/80 pb-4">
+                    <CardTitle className="flex items-center gap-2 text-[#d4af37]">
+                      <Shield size={20} />
+                      CRM Audit & Assessment Baseline Summary
+                    </CardTitle>
+                    <CardDescription>
+                      Transition baseline assessment compiled from imported CRM client records. Physical document verification pending.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-6 space-y-6 text-xs">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      
+                      {/* What We Know */}
+                      <div className="space-y-3.5 bg-slate-900/10 p-4 rounded border border-slate-800">
+                        <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
+                          <span className="h-5 w-5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-400/20 text-[10px] font-bold flex items-center justify-center font-mono">1</span>
+                          <h4 className="font-bold text-slate-200 uppercase tracking-wider text-[11px] font-mono">1. Verified (From CRM)</h4>
+                        </div>
+                        <div className="space-y-2 text-slate-400 font-medium">
+                          <div className="flex justify-between">
+                            <span>Total Households</span>
+                            <span className="font-bold text-slate-200">{advisor.households || households.length}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Total Accounts</span>
+                            <span className="font-bold text-slate-200">{advisor.accounts || households.reduce((sum, h) => sum + (h.accounts?.length || 0), 0)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Total Book AUM</span>
+                            <span className="font-bold text-slate-200">${advisor.totalAum || 0}M</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Annual Revenue</span>
+                            <span className="font-bold text-slate-200">${advisor.annualRevenue?.toLocaleString() || 'N/A'}</span>
+                          </div>
+                          <div className="border-t border-slate-850 pt-2 flex justify-between text-[#d4af37]">
+                            <span>Advisory Accounts</span>
+                            <span className="font-extrabold">{households.reduce((sum, h) => sum + h.accounts.filter(a => {
+                              const accName = a.name.toLowerCase();
+                              const accType = a.type.toLowerCase();
+                              const accReg = (a.registration || '').toLowerCase();
+                              const accNotes = (a.notes || '').toLowerCase();
+                              const hhNotes = (h.notes || '').toLowerCase();
+                              return [accName, accType, accReg, accNotes, hhNotes].some(s =>
+                                s.includes('advisory') || s.includes('managed') || s.includes('fee-based') ||
+                                s.includes('fee based') || s.includes('wrap') || s.includes('ria') ||
+                                s.includes('discretionary') || s.includes('fiduciary') || s.includes('billing')
+                              );
+                            }).length, 0)}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* What We Inferred */}
+                      <div className="space-y-3.5 bg-slate-900/10 p-4 rounded border border-slate-800">
+                        <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
+                          <span className="h-5 w-5 rounded bg-amber-500/10 text-amber-400 border border-amber-400/20 text-[10px] font-bold flex items-center justify-center font-mono">2</span>
+                          <h4 className="font-bold text-slate-200 uppercase tracking-wider text-[11px] font-mono">2. Inferred Requirements</h4>
+                        </div>
+                        <div className="space-y-1.5 max-h-[180px] overflow-y-auto pr-1">
+                          {(() => {
+                            const inferred = [];
+                            const trustCount = households.reduce((sum, h) => sum + h.accounts.filter(a => a.type === 'Trust').length, 0);
+                            const inheritedIraCount = households.reduce((sum, h) => sum + h.accounts.filter(a => a.type === 'Inherited IRA').length, 0);
+                            const entityCount = households.reduce((sum, h) => sum + h.accounts.filter(a => a.type === 'Entity').length, 0);
+                            const retirementCount = households.reduce((sum, h) => sum + h.accounts.filter(a => ['IRA', 'Roth IRA', 'SEP IRA', 'SIMPLE IRA', '401(k)'].includes(a.type)).length, 0);
+                            const altCount = households.reduce((sum, h) => sum + h.accounts.filter(a => a.type === 'Alternative Investment').length, 0);
+                            const annuityCount = households.reduce((sum, h) => sum + h.accounts.filter(a => a.type === 'Annuity').length, 0);
+                            
+                            if (trustCount > 0) inferred.push('Trustee Authorization Review');
+                            if (inheritedIraCount > 0) inferred.push('Inherited IRA Beneficiary Setup');
+                            if (entityCount > 0) inferred.push('Entity Authority Review');
+                            if (retirementCount > 0) inferred.push('Retirement Beneficiary Setup');
+                            if (altCount > 0) inferred.push('Alt Asset Custodian Clearance');
+                            if (annuityCount > 0) inferred.push('Annuity Carrier Transfer Clearance');
+                            
+                            return inferred.map((inf, idx) => (
+                              <div key={idx} className="bg-slate-900/60 p-2 rounded border border-slate-800 text-[11px] font-semibold text-slate-300">
+                                ✓ {inf}
+                              </div>
+                            ));
+                          })()}
+                        </div>
+                      </div>
+
+                      {/* What Still Requires Verification */}
+                      <div className="space-y-3.5 bg-slate-900/10 p-4 rounded border border-slate-800">
+                        <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
+                          <span className="h-5 w-5 rounded bg-[#d4af37]/10 text-[#d4af37] border border-[#d4af37]/20 text-[10px] font-bold flex items-center justify-center font-mono">3</span>
+                          <h4 className="font-bold text-slate-200 uppercase tracking-wider text-[11px] font-mono">3. Unknown (To Be Verified)</h4>
+                        </div>
+                        <div className="space-y-1.5 max-h-[180px] overflow-y-auto pr-1">
+                          {[
+                            'Trust documents on file',
+                            'Signed advisory agreement',
+                            'Current beneficiaries verified',
+                            'Trusted Contact verified',
+                            'Banking linkage documentation',
+                            'Power of Attorney (POA) review'
+                          ].map((unk, idx) => (
+                            <div key={idx} className="flex items-center gap-2 bg-slate-950/20 px-2.5 py-1.5 rounded border border-slate-800/40 text-[10px] text-slate-400 font-semibold">
+                              <span className="h-1.5 w-1.5 rounded-full bg-slate-500"></span>
+                              {unk}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Category 4: Verified During Assessment */}
+                    <div className="bg-[#d4af37]/5 border border-[#d4af37]/20 p-4 rounded-lg flex items-start gap-3.5">
+                      <div className="p-2 rounded bg-[#d4af37]/10 shrink-0">
+                        <CheckCircle2 size={16} className="text-[#d4af37]" />
+                      </div>
+                      <div className="space-y-1">
+                        <h4 className="font-bold text-xs text-slate-200 uppercase tracking-wider font-mono">4. Verified During Assessment</h4>
+                        <p className="text-[11px] text-slate-400 leading-normal">
+                          As CTS verifies physical documents, requirements move from <span className="text-[#d4af37] font-semibold">Unknown</span> to <span className="text-emerald-400 font-semibold">Verified (Present)</span>, <span className="text-rose-400 font-semibold">Missing</span>, or <span className="text-amber-400 font-semibold">Needs Review</span>. Readiness scores will activate only after at least one requirement has been verified.
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
               <Card>
                 <CardHeader>
                   <CardTitle>Advisor Profile Details</CardTitle>
@@ -2606,6 +2742,9 @@ export default function AdvisorWorkspaceClient({
                   else if (hh.readinessStatus === 'Significant Cleanup') statusBadgeVariant = 'advisory';
                   else if (hh.readinessStatus === 'Not Ready') statusBadgeVariant = 'critical';
 
+                  const hhHasEvaluated = hh.accounts.some(acc =>
+                    acc.checklistItems?.some(item => ['Present', 'Missing', 'Needs Review'].includes(item.status))
+                  );
                   const hhReadinessScore = calculateHouseholdReadiness(hh);
                   let ratingClass = 'text-rose-400';
                   if (hhReadinessScore >= 80) ratingClass = 'text-emerald-400';
@@ -2625,7 +2764,9 @@ export default function AdvisorWorkspaceClient({
                         </div>
                         <div className="flex flex-wrap items-center gap-3" onClick={e => e.stopPropagation()}>
                           <div className="text-center px-3 border-r border-slate-800">
-                            <span className={`text-sm font-extrabold ${ratingClass}`}>{hhReadinessScore}%</span>
+                            <span className={`text-sm font-extrabold ${hhHasEvaluated ? ratingClass : 'text-slate-400'}`}>
+                              {hhHasEvaluated ? `${hhReadinessScore}%` : 'Pending'}
+                            </span>
                             <span className="text-[8px] text-slate-500 block uppercase font-bold tracking-wider">Readiness</span>
                           </div>
                           <Badge variant="neutral" className="bg-slate-800 text-slate-300 border border-slate-700 font-semibold">
@@ -2696,6 +2837,9 @@ export default function AdvisorWorkspaceClient({
                                     else if (acc.readinessStatus === 'Missing Items') accBadgeVariant = 'critical';
                                     else if (acc.readinessStatus === 'Not Ready') accBadgeVariant = 'critical';
 
+                                    const accHasEvaluated = acc.checklistItems?.some(item =>
+                                       ['Present', 'Missing', 'Needs Review'].includes(item.status)
+                                     );
                                     const accComp = calculateAccountCompletion(acc.checklistItems, acc.custodian);
 
                                     return (
@@ -2707,7 +2851,9 @@ export default function AdvisorWorkspaceClient({
                                         </td>
                                         <td className="px-4 py-3 text-slate-400">{acc.custodian || '—'}</td>
                                         <td className="px-4 py-3 text-slate-400">{acc.registration || '—'}</td>
-                                        <td className="px-4 py-3 font-semibold text-slate-300">{accComp}%</td>
+                                        <td className="px-4 py-3 font-semibold text-slate-300">
+                                          {accHasEvaluated ? `${accComp}%` : 'Pending'}
+                                        </td>
                                         <td className="px-4 py-3">
                                           <Badge variant={accBadgeVariant} className="text-[9px] font-bold py-0.5 px-1.5 uppercase">
                                             {acc.readinessStatus}

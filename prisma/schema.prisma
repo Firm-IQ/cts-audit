@@ -56,7 +56,7 @@ model Advisor {
   createdBy             User?        @relation(fields: [createdById], references: [id])
 
   // Live Report Access
-  reportToken           String?      @unique
+  reportToken           String?
   reportEnabled         Boolean      @default(true)
   reportLastViewed      DateTime?
   initialScore          Float?

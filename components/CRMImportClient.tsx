@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent, Input, Label, Select, Badge } from '@/components/ui';
-import { FileUp, Columns, CheckCircle2, ChevronRight, AlertTriangle, RefreshCw, BarChart2 } from 'lucide-react';
+import { FileUp, Columns, CheckCircle2, ChevronRight, AlertTriangle, RefreshCw, BarChart2, ShieldCheck } from 'lucide-react';
 
 interface Advisor {
   id: string;
@@ -98,6 +98,18 @@ export default function CRMImportClient({ initialAdvisors }: { initialAdvisors: 
 
   // Import Results State
   const [importSummary, setImportSummary] = useState<any>(null);
+
+  // Household Analysis search & pagination
+  const [searchHhTerm, setSearchHhTerm] = useState('');
+  const [visibleHhCount, setVisibleHhCount] = useState(15);
+
+  const filteredHhAnalysis = React.useMemo(() => {
+    if (!importSummary || !importSummary.assessment || !importSummary.assessment.households) return [];
+    return importSummary.assessment.households.filter((hh: any) =>
+      hh.name.toLowerCase().includes(searchHhTerm.toLowerCase()) ||
+      hh.primaryClient.toLowerCase().includes(searchHhTerm.toLowerCase())
+    );
+  }, [importSummary, searchHhTerm]);
 
   // Fetch saved mapping config on CRM type changes
   useEffect(() => {
@@ -579,7 +591,274 @@ export default function CRMImportClient({ initialAdvisors }: { initialAdvisors: 
               </div>
             </div>
 
-            <div className="flex justify-center pt-4">
+            {/* CRM ASSESSMENT SUMMARY SECTION */}
+            {importSummary.assessment && (
+              <div className="space-y-6 pt-5 border-t border-slate-800">
+                <div>
+                  <h3 className="text-sm font-extrabold uppercase tracking-widest text-[#d4af37] flex items-center gap-2">
+                    <ShieldCheck size={18} className="text-[#d4af37]" />
+                    CRM Audit & Readiness Assessment
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Transition consultant analysis of book structure, client demographics, and transition requirements.
+                  </p>
+                </div>
+
+                {/* Custodians list */}
+                {importSummary.assessment.custodians && importSummary.assessment.custodians.length > 0 && (
+                  <div className="bg-[#1c2541]/20 border border-slate-800/80 p-4 rounded-lg space-y-2">
+                    <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400 block font-mono">Custodians Represented</span>
+                    <div className="flex flex-wrap gap-2.5">
+                      {importSummary.assessment.custodians.map((c: any, idx: number) => (
+                        <span key={idx} className="bg-slate-900/80 text-xs px-3 py-1 rounded-full border border-slate-800 font-bold text-slate-200">
+                          {c.name}: <span className="text-[#d4af37]">{c.count} {c.count === 1 ? 'account' : 'accounts'}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Detailed structure breakdown */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {/* Registrations & Accounts */}
+                  <div className="bg-slate-900/10 border border-slate-800/60 p-4 rounded-lg space-y-3">
+                    <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400 block border-b border-slate-800 pb-1.5 font-mono">
+                      Registrations & Ownership
+                    </span>
+                    <div className="space-y-2 text-xs">
+                      <div className="flex justify-between text-slate-400">
+                        <span>Individual Accounts</span>
+                        <span className="font-bold text-slate-200">{importSummary.assessment.structure.individualCount}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-400">
+                        <span>Joint Accounts</span>
+                        <span className="font-bold text-slate-200">{importSummary.assessment.structure.jointCount}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-400">
+                        <span>Trust Accounts</span>
+                        <span className="font-bold text-slate-200">{importSummary.assessment.structure.trustCount}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-400">
+                        <span>Entity Accounts</span>
+                        <span className="font-bold text-slate-200">{importSummary.assessment.structure.entityCount}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-400">
+                        <span>Estate Accounts</span>
+                        <span className="font-bold text-slate-200">{importSummary.assessment.structure.estateCount}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Retirement & Planning */}
+                  <div className="bg-slate-900/10 border border-slate-800/60 p-4 rounded-lg space-y-3">
+                    <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400 block border-b border-slate-800 pb-1.5 font-mono">
+                      Retirement & Planning
+                    </span>
+                    <div className="space-y-2 text-xs">
+                      <div className="flex justify-between text-slate-400">
+                        <span>Traditional IRAs</span>
+                        <span className="font-bold text-slate-200">{importSummary.assessment.structure.tradIraCount}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-400">
+                        <span>Roth IRAs</span>
+                        <span className="font-bold text-slate-200">{importSummary.assessment.structure.rothIraCount}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-400">
+                        <span>Inherited IRAs</span>
+                        <span className="font-bold text-slate-200">{importSummary.assessment.structure.inheritedIraCount}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-400">
+                        <span>529 Education Accounts</span>
+                        <span className="font-bold text-slate-200">{importSummary.assessment.structure.fiveTwoNineCount}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-400">
+                        <span>Employer Retirement Plans</span>
+                        <span className="font-bold text-slate-200">{importSummary.assessment.structure.employerRetirementCount}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Management Model & Transfers */}
+                  <div className="bg-slate-900/10 border border-slate-800/60 p-4 rounded-lg space-y-3">
+                    <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400 block border-b border-slate-800 pb-1.5 font-mono">
+                      Management Model & Assets
+                    </span>
+                    <div className="space-y-2 text-xs">
+                      <div className="flex justify-between text-slate-400">
+                        <span>Advisory Accounts</span>
+                        <span className="font-extrabold text-emerald-400">{importSummary.assessment.structure.advisoryCount}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-400">
+                        <span>Brokerage Accounts</span>
+                        <span className="font-bold text-slate-200">{importSummary.assessment.structure.brokerageCount}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-400">
+                        <span>Alternative Investments</span>
+                        <span className="font-bold text-slate-200">{importSummary.assessment.structure.altCount}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-400">
+                        <span>Annuities</span>
+                        <span className="font-bold text-slate-200">{importSummary.assessment.structure.annuityCount}</span>
+                      </div>
+                      <div className="flex justify-between text-[#d4af37]/80">
+                        <span>Active ACH Links</span>
+                        <span className="font-bold text-[#d4af37]">{importSummary.assessment.structure.achInstructionsCount}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Implied Requirements */}
+                <div className="space-y-3">
+                  <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400 block font-mono">
+                    Implied Transition Requirements
+                  </span>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {importSummary.assessment.requirements.map((req: any, idx: number) => (
+                      <div key={idx} className="bg-slate-900/30 border border-slate-800/80 p-3.5 rounded-lg flex items-start gap-3 hover:border-slate-700 transition duration-150">
+                        <div className="p-2 rounded bg-[#d4af37]/10 border border-[#d4af37]/20 mt-0.5 shrink-0">
+                          <CheckCircle2 className="text-[#d4af37]" size={14} />
+                        </div>
+                        <div className="space-y-1">
+                          <span className="font-bold text-slate-200 text-xs block">{req.title}</span>
+                          <p className="text-[11px] text-slate-400 font-medium leading-relaxed">{req.description}</p>
+                        </div>
+                      </div>
+                    ))}
+                    {importSummary.assessment.requirements.length === 0 && (
+                      <div className="col-span-2 text-center py-6 text-xs text-slate-500 italic">
+                        No custom requirements detected for this book.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* HOUSEHOLD LEVEL TRANSITION EVALUATIONS */}
+                {importSummary.assessment.households && importSummary.assessment.households.length > 0 && (
+                  <div className="space-y-4 pt-5 border-t border-slate-800">
+                    <div>
+                      <h3 className="text-sm font-extrabold uppercase tracking-widest text-[#d4af37] flex items-center gap-2">
+                        <Columns size={18} className="text-[#d4af37]" />
+                        Household Transition Analyses
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-1">
+                        Granular consultant evaluations and complexity profiles for each client household.
+                      </p>
+                    </div>
+
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="Search households by name or primary client..."
+                        value={searchHhTerm}
+                        onChange={(e) => setSearchHhTerm(e.target.value)}
+                        className="text-xs max-w-md bg-slate-900/50 border-slate-800"
+                      />
+                    </div>
+
+                    <div className="space-y-3.5 max-h-[600px] overflow-y-auto pr-2">
+                      {filteredHhAnalysis.slice(0, visibleHhCount).map((hh: any, idx: number) => {
+                        let complexityBadge = 'bg-emerald-400/10 text-emerald-400 border border-emerald-400/20';
+                        if (hh.complexity === 'High') {
+                          complexityBadge = 'bg-rose-400/10 text-rose-400 border border-rose-400/20';
+                        } else if (hh.complexity === 'Moderate') {
+                          complexityBadge = 'bg-amber-400/10 text-amber-400 border border-amber-400/20';
+                        }
+
+                        return (
+                          <div key={idx} className="bg-slate-900/20 border border-slate-800/80 p-4 rounded-lg space-y-3 hover:border-slate-700 transition duration-150">
+                            <div className="flex flex-wrap justify-between items-start gap-4 border-b border-slate-800/60 pb-2.5">
+                              <div>
+                                <span className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider block font-mono">Household</span>
+                                <span className="font-bold text-slate-200 text-sm">{hh.name}</span>
+                                <span className="text-xs text-slate-400 ml-2">({hh.composition})</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${complexityBadge}`}>
+                                  {hh.complexity} Complexity
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
+                              {/* Financials */}
+                              <div className="space-y-1 bg-slate-950/20 p-2.5 rounded border border-slate-850">
+                                <span className="text-[9px] uppercase tracking-wider font-extrabold text-slate-500 block font-mono">Financials</span>
+                                <div className="flex justify-between">
+                                  <span className="text-slate-400">Assets</span>
+                                  <span className="font-bold text-slate-200">${hh.assets >= 1000000 ? `${(hh.assets / 1000000).toFixed(2)}M` : hh.assets.toLocaleString()}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-slate-400">Revenue</span>
+                                  <span className="font-bold text-slate-200">${hh.revenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                                </div>
+                              </div>
+
+                              {/* Structure */}
+                              <div className="space-y-1 bg-slate-950/20 p-2.5 rounded border border-slate-850 md:col-span-2">
+                                <span className="text-[9px] uppercase tracking-wider font-extrabold text-slate-500 block font-mono">Structure & Registrations</span>
+                                <div className="text-[11px] text-slate-300">
+                                  <span className="font-semibold text-slate-400">Types:</span> {hh.accountTypes.join(', ') || 'None'}
+                                </div>
+                                <div className="text-[11px] text-slate-300">
+                                  <span className="font-semibold text-slate-400">Registrations:</span> {hh.registrations.join(', ') || 'None'}
+                                </div>
+                                <div className="text-[11px] text-slate-300">
+                                  <span className="font-semibold text-slate-400">Custodians:</span> {hh.custodians.join(', ') || 'None'}
+                                </div>
+                              </div>
+
+                              {/* Transition Requirements */}
+                              <div className="space-y-1 bg-slate-950/20 p-2.5 rounded border border-slate-850">
+                                <span className="text-[9px] uppercase tracking-wider font-extrabold text-slate-500 block font-mono">Potential Requirements</span>
+                                <div className="flex flex-wrap gap-1">
+                                  {hh.requirements.map((r: string, rIdx: number) => (
+                                    <span key={rIdx} className="bg-slate-900 text-[9px] px-1.5 py-0.5 rounded border border-slate-800 text-slate-300 font-medium">
+                                      {r}
+                                    </span>
+                                  ))}
+                                  {hh.requirements.length === 0 && <span className="text-slate-500 italic">None identified</span>}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Consultant Risk Notes */}
+                            {hh.risks && hh.risks.length > 0 && (
+                              <div className="bg-rose-950/5 border border-rose-900/10 p-2.5 rounded text-xs space-y-1">
+                                <span className="text-[9px] uppercase tracking-wider font-extrabold text-rose-400 block font-mono">Consultant Risk Flag</span>
+                                <ul className="list-disc list-inside text-slate-300 space-y-0.5 text-[11px]">
+                                  {hh.risks.map((risk: string, rIdx: number) => (
+                                    <li key={rIdx}>{risk}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {filteredHhAnalysis.length === 0 && (
+                        <div className="text-center py-8 text-xs text-slate-500 italic border border-dashed border-slate-800 rounded-lg">
+                          No households match search criteria.
+                        </div>
+                      )}
+                    </div>
+
+                    {filteredHhAnalysis.length > visibleHhCount && (
+                      <div className="flex justify-center pt-2">
+                        <Button
+                          variant="secondary"
+                          onClick={() => setVisibleHhCount(prev => prev + 15)}
+                          className="text-xs py-1"
+                        >
+                          Load More Households (+15)
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex justify-center pt-6">
               <Button
                 onClick={() => router.push(`/advisors/${importSummary.advisorId}`)}
                 className="uppercase font-extrabold tracking-wider"

@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { calculateReadinessScores } from '../lib/scoring';
+import { runEvaluationPipeline } from '../lib/evaluation-pipeline';
 
 const prisma = new PrismaClient();
 
@@ -179,7 +180,7 @@ async function main() {
         advisorId: advisor.id,
         name: hhDef.name,
         primaryClientName: hhDef.name.split(' ')[0],
-        totalAum: hhDef.aum,
+        totalAum: hhDef.aum / 1000000,
         revenue: hhDef.aum * 0.0075,
         email: `${hhDef.name.toLowerCase().replace(/ /g, '')}@example.com`,
         phone: '555-0100',
@@ -221,7 +222,7 @@ async function main() {
         advisorId: advisor.id,
         name: hhDef.name,
         primaryClientName: `${firstNames[i % firstNames.length]} ${lastNames[i % lastNames.length]}`,
-        totalAum: hhAum,
+        totalAum: hhAum / 1000000,
         revenue: hhAum * 0.0075,
         email,
         phone,
@@ -519,238 +520,42 @@ Synthetic demonstration data for Michael Bennett (Bennett Wealth Partners) conta
       communicationPlanScore: 8,
       employmentAgreementReviewed: true,
       nonSolicitNonCompeteConcerns: false,
-      legalReviewStatus: 'Completed'
+      legalReviewStatus: 'Completed',
+      overallReadinessScore: 0,
+      clientDataScore: 0,
+      kycDocumentationScore: 0,
+      transferComplexityScoreVal: 0,
+      operationalScore: 0,
+      complianceProtocolScore: 0,
+      communicationScore: 0,
+      currentPhase: 'Initial Review',
+      lastUpdatedBy: 'System Auto-Seed'
     }
   });
 
-  // 9. Automatically create Findings from Missing and Needs Review requirements
-  console.log('Generating Findings from Missing / Needs Review requirements...');
-  const unresolvedItems = await prisma.accountChecklistItem.findMany({
-    where: {
-      account: {
-        household: {
-          advisorId: advisor.id
-        }
-      },
-      status: { in: ['Missing', 'Needs Review'] }
-    },
-    include: {
-      account: {
-        include: {
-          household: true
-        }
-      },
-      requirement: true
-    }
+  // 9. Run evaluation pipeline to generate checklists, findings, and compute scores
+  await runEvaluationPipeline(advisor.id, 'System Auto-Seed');
+
+  // Load calculated assessment and counts for summary output
+  const updatedAssessment = await prisma.assessment.findFirst({
+    where: { advisorId: advisor.id },
+    orderBy: { createdAt: 'desc' }
   });
 
-  let criticalCount = 0;
-  let highCount = 0;
-  let moderateCount = 0;
-  let lowCount = 0;
-
-  for (const item of unresolvedItems) {
-    const isCritical = item.requirement?.critical || false;
-    let severity = 'Low';
-    if (isCritical && item.status === 'Missing') {
-      severity = 'Critical';
-      criticalCount++;
-    } else if (isCritical && item.status === 'Needs Review') {
-      severity = 'High';
-      highCount++;
-    } else if (!isCritical && item.status === 'Missing') {
-      severity = 'Moderate';
-      moderateCount++;
-    } else {
-      severity = 'Low';
-      lowCount++;
-    }
-
-    const category = item.requirement?.category || 'Documentation';
-
-    await prisma.finding.create({
-      data: {
-        assessmentId: assessment.id,
-        category,
-        title: item.itemName,
-        description: item.notes || `Requirement "${item.itemName}" is marked as "${item.status}" for account "${item.account.name}".`,
-        severity,
-        impact: isCritical ? 'May prevent or severely delay account repapering or asset transition.' : 'Minor operational delay in transition verification.',
-        recommendation: `Collect missing/updated documentation from client for "${item.itemName}".`,
-        owner: 'Advisor',
-        status: 'Open',
-        householdId: item.account.householdId,
-        accountId: item.accountId,
-        checklistItemId: item.id
-      }
-    });
-  }
-  console.log(`Created ${unresolvedItems.length} findings.`);
-
-  // 10. Programmatic calculations of completeness percentages
   const totalHhCount = dbHouseholds.length;
   const totalAccCount = dbAccounts.length;
-
-  const emailCompleteHh = dbHouseholds.filter(h => h.email !== null).length;
-  const phoneCompleteHh = dbHouseholds.filter(h => h.phone !== null).length;
-  const addressCompleteHh = dbHouseholds.filter(h => h.address !== null).length;
-
-  const emailCompletenessPercent = Math.round((emailCompleteHh / totalHhCount) * 1000) / 10;
-  const phoneCompletenessPercent = Math.round((phoneCompleteHh / totalHhCount) * 1000) / 10;
-  const addressCompletenessPercent = Math.round((addressCompleteHh / totalHhCount) * 1000) / 10;
-
-  const missingTcChecklists = await prisma.accountChecklistItem.findMany({
-    where: {
-      requirementId: reqTrustedContact,
-      status: 'Missing',
-      account: {
-        household: {
-          advisorId: advisor.id
-        }
-      }
-    },
-    include: {
-      account: true
-    }
-  });
-  const missingTcHhIds = new Set(missingTcChecklists.map(c => c.account.householdId));
-  const trustedContactCompletenessPercent = Math.round(((totalHhCount - missingTcHhIds.size) / totalHhCount) * 1000) / 10;
-
-  const totalRtCount = await prisma.accountChecklistItem.count({
-    where: {
-      requirementId: reqRiskTolerance,
-      account: { household: { advisorId: advisor.id } }
-    }
-  });
-  const presentRtCount = await prisma.accountChecklistItem.count({
-    where: {
-      requirementId: reqRiskTolerance,
-      status: 'Present',
-      account: { household: { advisorId: advisor.id } }
-    }
-  });
-  const riskToleranceCurrentPercent = Math.round((presentRtCount / totalRtCount) * 1000) / 10;
-
-  const totalIoCount = await prisma.accountChecklistItem.count({
-    where: {
-      requirementId: reqInvestmentObjectives,
-      account: { household: { advisorId: advisor.id } }
-    }
-  });
-  const presentIoCount = await prisma.accountChecklistItem.count({
-    where: {
-      requirementId: reqInvestmentObjectives,
-      status: 'Present',
-      account: { household: { advisorId: advisor.id } }
-    }
-  });
-  const investmentObjectiveCurrentPercent = Math.round((presentIoCount / totalIoCount) * 1000) / 10;
-
-  const criticalIssuesCount = await prisma.accountChecklistItem.count({
-    where: {
-      status: { in: ['Missing', 'Needs Review'] },
-      requirement: { critical: true },
-      account: { household: { advisorId: advisor.id } }
-    }
-  });
-  const missingSignatureRiskScore = Math.min(10, Math.max(1, Math.round(criticalIssuesCount / 4)));
-
-  const scoreInputs = {
-    emailCompletenessPercent,
-    phoneCompletenessPercent,
-    addressCompletenessPercent,
-    householdingQualityScore: 10,
-    duplicateRecordRiskScore: 10,
-    clientNotesQualityScore: 9,
-    kycUpdateFrequency: 'Triennial',
-    trustedContactCompletenessPercent,
-    beneficiaryReviewStatus: 'Incomplete',
-    riskToleranceCurrentPercent,
-    investmentObjectiveCurrentPercent,
-    missingSignatureRiskScore,
-    documentStorageQualityScore: 8,
-    percentIraAccounts: (126 / 350) * 100,
-    percentTrustAccounts: (28 / 350) * 100,
-    percentEntityAccounts: (7 / 350) * 100,
-    percentAnnuityAltAccounts: (9 / 350) * 100,
-    directBusinessAmount: 0,
-    transferComplexityScore: 2,
-    staffCapacityScore: 8,
-    crmExportQualityScore: 9,
-    taskManagementScore: 8,
-    digitalSignatureReadinessScore: 9,
-    communicationPlanScore: 8,
-    protocolStatus: 'Yes',
-    employmentAgreementReviewed: true,
-    nonSolicitNonCompeteConcerns: false,
-    legalReviewStatus: 'Completed'
-  };
-
-  const calculatedScores = calculateReadinessScores(scoreInputs);
-
-  const { protocolStatus: _, ...scoreInputsForDb } = scoreInputs;
-
-  const updatedAssessment = await prisma.assessment.update({
-    where: { id: assessment.id },
-    data: {
-      ...scoreInputsForDb,
-      ...calculatedScores
-    }
-  });
-
-  // Calculate Household Readiness programmatically
-  console.log('Calculating household and account readiness statuses...');
-  for (const hh of dbHouseholds) {
-    const hhChecklist = await prisma.accountChecklistItem.findMany({
-      where: {
-        account: { householdId: hh.id }
-      }
-    });
-
-    const hasMissing = hhChecklist.some(c => c.status === 'Missing');
-    const hasNeedsReview = hhChecklist.some(c => c.status === 'Needs Review');
-
-    let status = 'Ready';
-    if (hasMissing) {
-      status = hh.name === 'Morgan Family Trust' || hh.name === 'Thompson Household' ? 'Not Ready' : 'Significant Cleanup';
-    } else if (hasNeedsReview) {
-      status = 'Minor Cleanup';
-    }
-
-    await prisma.household.update({
-      where: { id: hh.id },
-      data: { readinessStatus: status }
-    });
-  }
-
-  // Calculate Account Readiness programmatically
-  for (const acc of dbAccounts) {
-    const accChecklist = await prisma.accountChecklistItem.findMany({
-      where: { accountId: acc.id }
-    });
-
-    const hasMissing = accChecklist.some(c => c.status === 'Missing');
-    const hasNeedsReview = accChecklist.some(c => c.status === 'Needs Review');
-
-    let status = 'Ready';
-    if (hasMissing) {
-      status = 'Missing Items';
-    } else if (hasNeedsReview) {
-      status = 'Needs Review';
-    }
-
-    await prisma.account.update({
-      where: { id: acc.id },
-      data: { readinessStatus: status }
-    });
-  }
 
   const readyHhsCount = await prisma.household.count({ where: { advisorId: advisor.id, readinessStatus: 'Ready' } });
   const cleanupHhsCount = await prisma.household.count({ where: { advisorId: advisor.id, readinessStatus: { in: ['Minor Cleanup', 'Significant Cleanup'] } } });
   const notReadyHhsCount = await prisma.household.count({ where: { advisorId: advisor.id, readinessStatus: 'Not Ready' } });
 
   const readyAccsCount = await prisma.account.count({ where: { household: { advisorId: advisor.id }, readinessStatus: 'Ready' } });
-  const packetCompletionPercent = Math.round((readyAccsCount / totalAccCount) * 1000) / 10;
+  const packetCompletionPercent = totalAccCount > 0 ? Math.round((readyAccsCount / totalAccCount) * 1000) / 10 : 0;
+
+  const criticalCount = await prisma.finding.count({ where: { assessmentId: updatedAssessment?.id, severity: 'Critical' } });
+  const highCount = await prisma.finding.count({ where: { assessmentId: updatedAssessment?.id, severity: 'High' } });
+  const moderateCount = await prisma.finding.count({ where: { assessmentId: updatedAssessment?.id, severity: 'Moderate' } });
+  const lowCount = await prisma.finding.count({ where: { assessmentId: updatedAssessment?.id, severity: 'Low' } });
 
   console.log('\n====================================================');
   console.log('SEEDING COMPLETED SUCCESSFULLY!');
@@ -763,13 +568,13 @@ Synthetic demonstration data for Michael Bennett (Bennett Wealth Partners) conta
   console.log('====================================================');
   console.log('CALCULATED READINESS ENGINE METRICS');
   console.log('====================================================');
-  console.log(`Know Your Book™ Index:                  ${updatedAssessment.overallReadinessScore}%`);
-  console.log(`- Client Data Category Score:            ${updatedAssessment.clientDataScore}%`);
-  console.log(`- KYC & Documentation Category Score:    ${updatedAssessment.kycDocumentationScore}%`);
-  console.log(`- Transfer Complexity Category Score:    ${updatedAssessment.transferComplexityScoreVal}%`);
-  console.log(`- Operational Category Score:            ${updatedAssessment.operationalScore}%`);
-  console.log(`- Compliance & Protocol Category Score:   ${updatedAssessment.complianceProtocolScore}%`);
-  console.log(`- Client Communication Category Score:   ${updatedAssessment.communicationScore}%\n`);
+  console.log(`Know Your Book™ Index:                  ${updatedAssessment?.overallReadinessScore}%`);
+  console.log(`- Client Data Category Score:            ${updatedAssessment?.clientDataScore}%`);
+  console.log(`- KYC & Documentation Category Score:    ${updatedAssessment?.kycDocumentationScore}%`);
+  console.log(`- Transfer Complexity Category Score:    ${updatedAssessment?.transferComplexityScoreVal}%`);
+  console.log(`- Operational Category Score:            ${updatedAssessment?.operationalScore}%`);
+  console.log(`- Compliance & Protocol Category Score:   ${updatedAssessment?.complianceProtocolScore}%`);
+  console.log(`- Client Communication Category Score:   ${updatedAssessment?.communicationScore}%\n`);
   
   console.log('HOUSEHOLD READINESS BREAKDOWN');
   console.log(`- Transition Ready:    ${readyHhsCount} households`);

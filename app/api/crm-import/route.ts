@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { runEvaluationPipeline } from '@/lib/evaluation-pipeline';
+
 
 function parseCSV(text: string): string[][] {
   const lines: string[][] = [];
@@ -223,16 +225,9 @@ export async function POST(request: Request) {
       });
     });
 
-    // 4. Load Active Requirement Profiles to generate checklists
-    const activeProfiles = await prisma.requirementProfile.findMany({
-      where: { active: true },
-      include: {
-        profileRequirements: {
-          include: {
-            requirement: true
-          }
-        }
-      }
+    // 4. Load Active Requirements directly from the Requirement Library
+    const activeRequirements = await prisma.requirementLibrary.findMany({
+      where: { active: true }
     });
 
     // 5. Database Insertions
@@ -245,9 +240,21 @@ export async function POST(request: Request) {
 
     let trustAccountsCount = 0;
     let iraAccountsCount = 0;
+    let rothIraAccountsCount = 0;
     let inheritedIraAccountsCount = 0;
     let entityAccountsCount = 0;
     let estateAccountsCount = 0;
+    let fiveTwoNineAccountsCount = 0;
+    let annuityAccountsCount = 0;
+    let altAccountsCount = 0;
+    let employerRetirementAccountsCount = 0;
+    let individualAccountsCount = 0;
+    let jointAccountsCount = 0;
+    let advisoryAccountsCount = 0;
+    let brokerageAccountsCount = 0;
+    let achInstructionsCount = 0;
+    let rmdAgeCount = 0;
+    const custodiansMap = new Map<string, number>();
     let specialHoldingsCount = 0;
     let potentialHighRiskAccountsCount = 0;
 
@@ -319,74 +326,222 @@ export async function POST(request: Request) {
         // Statistics breakdowns
         if (acc.type === 'Trust') trustAccountsCount++;
         else if (acc.type === 'IRA') iraAccountsCount++;
+        else if (acc.type === 'Roth IRA') rothIraAccountsCount++;
         else if (acc.type === 'Inherited IRA') inheritedIraAccountsCount++;
         else if (acc.type === 'Entity') entityAccountsCount++;
         else if (acc.type === 'Estate') estateAccountsCount++;
+        else if (acc.type === '529') fiveTwoNineAccountsCount++;
+        else if (acc.type === 'Annuity') annuityAccountsCount++;
+        else if (acc.type === 'Alternative Investment') altAccountsCount++;
+        else if (['401(k)', '403(b)', 'Keogh', 'Profit Sharing'].includes(acc.type)) employerRetirementAccountsCount++;
+        else if (acc.type === 'Individual') individualAccountsCount++;
+        else if (acc.type === 'Joint') jointAccountsCount++;
         
         if (['Annuity', 'Alternative Investment', 'Direct Business'].includes(acc.type)) {
           specialHoldingsCount++;
         }
 
+        // Custodians represented
+        const custName = (acc.custodian || 'Unknown').trim();
+        if (custName) {
+          custodiansMap.set(custName, (custodiansMap.get(custName) || 0) + 1);
+        }
+
+        // Advisory vs Brokerage
+        const notesStr = (acc.notes || '').toLowerCase() + ' ' + (data.notes.join(' ')).toLowerCase();
+        const regStr = (acc.registration || '').toLowerCase();
+        const nameStr = (acc.name || '').toLowerCase();
+        const typeStr = (acc.type || '').toLowerCase();
+
+        const isAdvisory = [notesStr, regStr, nameStr, typeStr].some(s => 
+          s.includes('advisory') || s.includes('managed') || s.includes('fee-based') || 
+          s.includes('fee based') || s.includes('wrap') || s.includes('ria') || 
+          s.includes('discretionary') || s.includes('fiduciary') || s.includes('billing')
+        );
+        if (isAdvisory) advisoryAccountsCount++;
+        else brokerageAccountsCount++;
+
+        // ACH Instructions
+        const hasAch = [notesStr, regStr, nameStr].some(s =>
+          s.includes('ach') || s.includes('banking') || s.includes('direct deposit') ||
+          s.includes('standing instruction') || s.includes('periodic distribution') ||
+          s.includes('eft') || s.includes('wire instruction') || s.includes('link bank')
+        );
+        if (hasAch) achInstructionsCount++;
+
+        // RMD / Age 73+
+        const hasRmdOrAge = notesStr.includes('age 73') || notesStr.includes('age 74') || 
+                            notesStr.includes('age 75') || notesStr.includes('age 76') ||
+                            notesStr.includes('age 77') || notesStr.includes('age 78') ||
+                            notesStr.includes('age 79') || notesStr.includes('age 8') ||
+                            notesStr.includes('born 195') || notesStr.includes('born 194') ||
+                            notesStr.includes('born 193') || notesStr.includes('rmd') || 
+                            notesStr.includes('required minimum');
+        if (hasRmdOrAge) rmdAgeCount++;
+
         // Potential High Risk: value > $1.5M, or Alternative/Annuity holdings, or Estates
         if ((acc.value && acc.value > 1500000) || ['Alternative Investment', 'Annuity', 'Estate'].includes(acc.type)) {
           potentialHighRiskAccountsCount++;
         }
-
-        // 6. Checklist Generation
-        let profile = null;
-        if (acc.custodian) {
-          profile = activeProfiles.find(p => p.name.trim().toLowerCase() === acc.custodian!.trim().toLowerCase());
-        }
-        if (!profile) {
-          profile = activeProfiles.find(p => p.name === 'CTS Master Requirements');
-        }
-
-        if (profile) {
-          const checklistData = profile.profileRequirements
-            .filter(pr => pr.state !== 'Hidden' && pr.requirement.active)
-            .map(pr => {
-              const req = pr.requirement;
-              const isAll = req.appliesToAccountTypes.toLowerCase() === 'all';
-              const appliesList = req.appliesToAccountTypes.split(',').map(s => s.trim().toLowerCase());
-              const isApplicable = isAll || appliesList.includes(acc.type.trim().toLowerCase());
-
-              return {
-                accountId: newAccount.id,
-                itemKey: req.id,
-                itemName: req.name,
-                status: isApplicable ? 'Unknown' : 'Not Applicable',
-                notes: '',
-                verifiedBy: '',
-                verifiedDate: '',
-                requirementId: req.id,
-              };
-            });
-
-          if (checklistData.length > 0) {
-            await prisma.accountChecklistItem.createMany({
-              data: checklistData,
-            });
-          }
-        }
       }
     }
 
-    // Update Advisor AUM and counts
-    const allHhs = await prisma.household.findMany({ where: { advisorId: advisor.id } });
-    const hhCount = allHhs.length;
-    const accCount = await prisma.account.count({ where: { household: { advisorId: advisor.id } } });
-    const finalAdvisorAum = allHhs.reduce((sum, h) => sum + (h.totalAum || 0), 0);
-    const finalAdvisorRev = allHhs.reduce((sum, h) => sum + (h.revenue || 0), 0);
-
-    await prisma.advisor.update({
-      where: { id: advisor.id },
-      data: {
-        totalAum: finalAdvisorAum,
-        annualRevenue: finalAdvisorRev,
-        households: hhCount,
-        accounts: accCount
-      }
+    // Get creator user name
+    const creatorUser = await prisma.user.findUnique({
+      where: { id: session.userId }
     });
+    const userFullName = creatorUser ? `${creatorUser.firstName || ''} ${creatorUser.lastName || ''}`.trim() : session.name;
+
+    // Run evaluation pipeline to generate checklists, findings, and compute scores
+    await runEvaluationPipeline(advisor.id, userFullName || undefined);
+
+
+    // Compile implied requirements
+    const impliedRequirements = [];
+    if (trustAccountsCount > 0) {
+      impliedRequirements.push({
+        title: 'Trust Documentation Required',
+        description: `Verify fiduciary authority, successor trustees, and signature rules for ${trustAccountsCount} Trust accounts.`
+      });
+    }
+    if (inheritedIraAccountsCount > 0) {
+      impliedRequirements.push({
+        title: 'Inherited IRA Documentation Required',
+        description: `Verify successor status, original decedent details, and distribution schedules for ${inheritedIraAccountsCount} Inherited IRAs.`
+      });
+    }
+    if (achInstructionsCount > 0) {
+      impliedRequirements.push({
+        title: 'Banking / ACH Documentation Required',
+        description: `Verify standing linkages, banking credentials, and transfer authorizations for ${achInstructionsCount} accounts.`
+      });
+    }
+    if (entityAccountsCount > 0) {
+      impliedRequirements.push({
+        title: 'Entity Authority Documentation Required',
+        description: `Verify corporate resolutions, operating agreements, and signing officer authority for ${entityAccountsCount} entity accounts.`
+      });
+    }
+    const retirementCount = iraAccountsCount + rothIraAccountsCount + inheritedIraAccountsCount + employerRetirementAccountsCount;
+    if (retirementCount > 0) {
+      impliedRequirements.push({
+        title: 'Beneficiary Review Recommended',
+        description: `Review designated primary and contingent beneficiaries for ${retirementCount} retirement accounts.`
+      });
+    }
+    if (rmdAgeCount > 0) {
+      impliedRequirements.push({
+        title: 'RMD Review Recommended',
+        description: `Audit year-to-date distributions and Required Minimum Distribution schedules for ${rmdAgeCount} aging clients (73+).`
+      });
+    }
+    if (altAccountsCount > 0) {
+      impliedRequirements.push({
+        title: 'Alternative Asset Transfer Review Required',
+        description: `Audit product eligibility, subscription terms, and custom transfer rules for ${altAccountsCount} alternative investments.`
+      });
+    }
+    if (annuityAccountsCount > 0) {
+      impliedRequirements.push({
+        title: 'Annuity Contract Review Required',
+        description: `Audit contract registration, rider provisions, and tax-deferred transfer pathways for ${annuityAccountsCount} annuities.`
+      });
+    }
+
+    // Compile household-level transition evaluations
+    const analyzedHouseholds = [];
+    for (const [key, data] of householdsMap.entries()) {
+      const accounts = data.accounts;
+      const totalAum = accounts.reduce((sum, a) => sum + (a.value || 0), 0);
+      const totalRevenue = totalAum * 0.0075;
+
+      // 1. Household Composition
+      let composition = 'Single Client';
+      if (data.secondaryClient) {
+        composition = 'Married Couple / Joint Household';
+      } else if (data.name.toLowerCase().includes('trust')) {
+        composition = 'Fiduciary Trust Entity';
+      } else if (data.name.toLowerCase().includes('llc') || data.name.toLowerCase().includes('corp') || data.name.toLowerCase().includes('inc')) {
+        composition = 'Business Entity';
+      }
+
+      // 2. Account Registrations
+      const registrations = Array.from(new Set(accounts.map(a => a.registration).filter(Boolean)));
+
+      // 3. Account Types
+      const accountTypes = Array.from(new Set(accounts.map(a => a.type).filter(Boolean)));
+
+      // 4. Custodians
+      const custodians = Array.from(new Set(accounts.map(a => a.custodian).filter(Boolean)));
+
+      // 5. Potential Transition Requirements (no "missing" assumption)
+      const requirements = [];
+      const hasTrust = accounts.some(a => a.type === 'Trust');
+      const hasInherited = accounts.some(a => a.type === 'Inherited IRA');
+      const hasEntity = accounts.some(a => a.type === 'Entity');
+      const hasAnnuity = accounts.some(a => a.type === 'Annuity');
+      const hasAlt = accounts.some(a => a.type === 'Alternative Investment');
+      
+      const notesStr = (data.notes.join(' ') + ' ' + accounts.map(a => a.notes).join(' ')).toLowerCase();
+      const hasAch = notesStr.includes('ach') || notesStr.includes('banking') || notesStr.includes('direct deposit') || notesStr.includes('eft');
+      const isAging = notesStr.includes('age 73') || notesStr.includes('age 74') || notesStr.includes('age 75') || notesStr.includes('born 195') || notesStr.includes('born 194') || notesStr.includes('rmd') || notesStr.includes('required minimum');
+
+      if (hasTrust) requirements.push('Trustee Authorization & Certification');
+      if (hasInherited) requirements.push('Inherited IRA Beneficiary Setup');
+      if (hasEntity) requirements.push('Corporate Resolution & Officer Signing Authority');
+      if (hasAnnuity) requirements.push('Annuity Contract Ownership Verification');
+      if (hasAlt) requirements.push('Alternative Asset Custodian Clearance Review');
+      if (hasAch) requirements.push('ACH Bank Authorization Transfer');
+      if (accounts.some(a => ['IRA', 'Roth IRA', 'SEP IRA', 'SIMPLE IRA', '401(k)'].includes(a.type))) {
+        requirements.push('Retirement Account Beneficiary Designation');
+      }
+
+      // 6. Potential Transition Risks
+      const risks = [];
+      if (totalAum > 1500000) {
+        risks.push('High-Value Asset Retention Risk (requires senior consultant touchpoint)');
+      }
+      if (isAging) {
+        risks.push('Active RMD Schedule (requires distribution replication check)');
+      }
+      if (hasAlt) {
+        risks.push('Alternative asset subject to custodian clearing pre-approval');
+      }
+      if (hasAnnuity) {
+        risks.push('Annuity transfer requires coordination with insurance carrier');
+      }
+      if (accounts.some(a => a.type === 'Estate')) {
+        risks.push('Estate account under executorship (requires executor authorization paperwork)');
+      }
+      if (risks.length === 0) {
+        risks.push('No custom risks identified');
+      }
+
+      // 7. Transition Complexity
+      let complexity = 'Low';
+      if (hasAlt || hasAnnuity || accounts.some(a => a.type === 'Estate') || totalAum > 2000000) {
+        complexity = 'High';
+      } else if (hasTrust || hasEntity || accounts.length > 2) {
+        complexity = 'Moderate';
+      }
+
+      analyzedHouseholds.push({
+        name: data.name,
+        primaryClient: data.primaryClient,
+        composition,
+        registrations,
+        accountTypes,
+        custodians,
+        assets: totalAum,
+        revenue: totalRevenue,
+        requirements,
+        risks,
+        complexity
+      });
+    }
+
+    // Custodians represented list
+    const custodiansList = Array.from(custodiansMap.entries()).map(([name, count]) => ({ name, count }));
 
     return NextResponse.json({
       success: true,
@@ -408,6 +563,32 @@ export async function POST(request: Request) {
         duplicateHouseholds: duplicateHouseholdsCount,
         duplicateAccounts: duplicateAccountsCount,
         missingRequired: missingRequiredCount
+      },
+      assessment: {
+        totalHouseholds: householdsCreated,
+        totalAccounts: accountsCreated,
+        totalAum,
+        custodians: custodiansList,
+        structure: {
+          trustCount: trustAccountsCount,
+          individualCount: individualAccountsCount,
+          jointCount: jointAccountsCount,
+          tradIraCount: iraAccountsCount,
+          rothIraCount: rothIraAccountsCount,
+          inheritedIraCount: inheritedIraAccountsCount,
+          entityCount: entityAccountsCount,
+          estateCount: estateAccountsCount,
+          fiveTwoNineCount: fiveTwoNineAccountsCount,
+          annuityCount: annuityAccountsCount,
+          altCount: altAccountsCount,
+          employerRetirementCount: employerRetirementAccountsCount,
+          advisoryCount: advisoryAccountsCount,
+          brokerageCount: brokerageAccountsCount,
+          achInstructionsCount,
+          rmdAgeCount
+        },
+        requirements: impliedRequirements,
+        households: analyzedHouseholds
       }
     });
 

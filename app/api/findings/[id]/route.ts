@@ -85,8 +85,6 @@ export async function PUT(
     if (status !== existingFinding.status) {
       await prisma.activityLog.create({
         data: {
-          advisorId: updatedFinding.assessment.advisorId, // wait, updatedFinding does not include assessment in the type?
-          // Let's get advisorId from existingFinding. Let's look up assessment first!
           advisorId: (await prisma.assessment.findUnique({ where: { id: existingFinding.assessmentId } }))?.advisorId || '',
           householdId: existingFinding.householdId,
           accountId: existingFinding.accountId,

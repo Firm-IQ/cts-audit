@@ -176,6 +176,23 @@ export async function POST(request: Request) {
       });
     }
 
+    const evaluatedRequirementsCount = await prisma.accountChecklistItem.count({
+      where: {
+        account: { household: { advisorId } },
+        status: { in: ['Present', 'Missing', 'Needs Review'] }
+      }
+    });
+
+    if (evaluatedRequirementsCount === 0) {
+      calculatedScores.overallReadinessScore = 0;
+      calculatedScores.clientDataScore = 0;
+      calculatedScores.kycDocumentationScore = 0;
+      calculatedScores.transferComplexityScoreVal = 0;
+      calculatedScores.operationalScore = 0;
+      calculatedScores.complianceProtocolScore = 0;
+      calculatedScores.communicationScore = 0;
+    }
+
     const creatorUser = await prisma.user.findUnique({
       where: { id: session.userId }
     });

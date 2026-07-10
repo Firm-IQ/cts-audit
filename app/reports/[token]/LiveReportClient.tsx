@@ -66,6 +66,9 @@ interface LiveReportClientProps {
     complianceProtocolScore: number;
     communicationScore: number;
     updatedAt: Date | string;
+    createdAt: Date | string;
+    lastUpdatedBy: string;
+    currentPhase: string;
   } | null;
   households: Array<{
     id: string;
@@ -73,6 +76,7 @@ interface LiveReportClientProps {
     totalAum: number | null;
     primaryClientName: string | null;
     readinessStatus: string;
+    notes?: string | null;
     accounts: Array<{
       id: string;
       name: string;
@@ -80,6 +84,8 @@ interface LiveReportClientProps {
       value: number | null;
       readinessStatus: string;
       registration: string;
+      custodian?: string | null;
+      notes?: string | null;
       checklistItems: Array<{
         id: string;
         itemName: string;
@@ -105,17 +111,147 @@ interface LiveReportClientProps {
     accountName: string | null;
     accountType: string | null;
   }>;
+  notes: Array<{
+    id: string;
+    noteType: string;
+    noteBody: string;
+    createdAt: string;
+    createdByFullName: string;
+    householdId: string | null;
+    accountId: string | null;
+    findingId: string | null;
+    checklistItemId: string | null;
+  }>;
+  activities: Array<{
+    id: string;
+    action: string;
+    objectAffected: string;
+    description: string;
+    previousValue: string | null;
+    newValue: string | null;
+    createdAt: string;
+    createdByUserFullName: string;
+  }>;
+  daysSinceLastUpdate: number;
+  progressSummary: string;
 }
 
 export default function LiveReportClient({
   advisor,
   assessment,
   households,
-  findings
+  findings,
+  notes = [],
+  activities = [],
+  daysSinceLastUpdate = 0,
+  progressSummary = ''
 }: LiveReportClientProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedHouseholds, setExpandedHouseholds] = useState<Record<string, boolean>>({});
   const [statusFilter, setStatusFilter] = useState('All');
+
+  const isAssessmentEvaluated = useMemo(() => {
+    return households.some(hh =>
+      hh.accounts.some(acc =>
+        acc.checklistItems?.some(item => ['Present', 'Missing', 'Needs Review'].includes(item.status))
+      )
+    );
+  }, [households]);
+
+  const crmStats = useMemo(() => {
+    const custodiansMap: Record<string, number> = {};
+    let advisoryCount = 0;
+    let brokerageCount = 0;
+    let trustCount = 0;
+    let inheritedIraCount = 0;
+    let entityCount = 0;
+    let retirementCount = 0;
+    let altCount = 0;
+    let annuityCount = 0;
+    let individualCount = 0;
+    let jointCount = 0;
+    let achLinkCount = 0;
+    let rmdAgeCount = 0;
+
+    households.forEach(hh => {
+      hh.accounts.forEach(acc => {
+        const cust = (acc.custodian || 'Unknown').trim();
+        custodiansMap[cust] = (custodiansMap[cust] || 0) + 1;
+
+        const accType = (acc.type || '').toLowerCase();
+        const accReg = (acc.registration || '').toLowerCase();
+        const accName = (acc.name || '').toLowerCase();
+        const accNotes = (acc.notes || '').toLowerCase();
+        const hhNotes = (hh.notes || '').toLowerCase();
+        const allNotes = accNotes + ' ' + hhNotes;
+
+        if (accType.includes('trust')) trustCount++;
+        else if (accType.includes('inherited') && accType.includes('ira')) inheritedIraCount++;
+        else if (accType.includes('entity')) entityCount++;
+        else if (accType.includes('annuity')) annuityCount++;
+        else if (accType.includes('alternative') || accType.includes('alt')) altCount++;
+        else if (accType.includes('individual')) individualCount++;
+        else if (accType.includes('joint')) jointCount++;
+
+        if (['ira', 'roth', 'sep', 'simple', '401', '403', 'keogh', 'retirement'].some(term => accType.includes(term))) {
+          retirementCount++;
+        }
+
+        const isAdvisory = [allNotes, accReg, accName, accType].some(s => 
+          s.includes('advisory') || s.includes('managed') || s.includes('fee-based') || 
+          s.includes('fee based') || s.includes('wrap') || s.includes('ria') || 
+          s.includes('discretionary') || s.includes('fiduciary') || s.includes('billing')
+        );
+        if (isAdvisory) advisoryCount++;
+        else brokerageCount++;
+
+        const hasAch = [allNotes, accReg, accName].some(s =>
+          s.includes('ach') || s.includes('banking') || s.includes('direct deposit') || s.includes('eft')
+        );
+        if (hasAch) achLinkCount++;
+
+        const hasRmdOrAge = allNotes.includes('age 73') || allNotes.includes('age 74') || 
+                            allNotes.includes('age 75') || allNotes.includes('age 76') ||
+                            allNotes.includes('age 77') || allNotes.includes('age 78') ||
+                            allNotes.includes('age 79') || allNotes.includes('age 8') ||
+                            allNotes.includes('born 195') || allNotes.includes('born 194') ||
+                            allNotes.includes('born 193') || allNotes.includes('rmd') || 
+                            allNotes.includes('required minimum');
+        if (hasRmdOrAge) rmdAgeCount++;
+      });
+    });
+
+    const custodiansList = Object.entries(custodiansMap).map(([name, count]) => ({ name, count }));
+
+    // Inferred requirements
+    const inferred = [];
+    if (trustCount > 0) inferred.push({ title: 'Trust Documentation Required', desc: `Implied by ${trustCount} Trust accounts under correct fiduciary authority.` });
+    if (inheritedIraCount > 0) inferred.push({ title: 'Inherited IRA Documentation Required', desc: `Implied by ${inheritedIraCount} Inherited IRAs (requires beneficiary distribution structures).` });
+    if (entityCount > 0) inferred.push({ title: 'Entity Authority Required', desc: `Implied by ${entityCount} corporate/LLC entity accounts.` });
+    if (advisoryCount > 0) inferred.push({ title: 'Advisory Agreement Required', desc: `Implied by ${advisoryCount} fee-based/managed accounts.` });
+    if (achLinkCount > 0) inferred.push({ title: 'ACH Documentation Recommended', desc: `Implied by ${achLinkCount} accounts with noted bank transfers/linkages.` });
+    if (retirementCount > 0) inferred.push({ title: 'Beneficiary Review Required', desc: `Implied by ${retirementCount} tax-advantaged retirement accounts.` });
+    if (altCount > 0) inferred.push({ title: 'Alternative Asset Clearing Review Required', desc: `Implied by ${altCount} alternative investments.` });
+    if (annuityCount > 0) inferred.push({ title: 'Annuity Carrier Verification Required', desc: `Implied by ${annuityCount} variable/fixed insurance contracts.` });
+    if (rmdAgeCount > 0) inferred.push({ title: 'RMD Schedule Review Recommended', desc: `Implied by ${rmdAgeCount} clients subject to annual distribution rules.` });
+
+    return {
+      custodians: custodiansList,
+      advisoryCount,
+      brokerageCount,
+      trustCount,
+      inheritedIraCount,
+      entityCount,
+      retirementCount,
+      altCount,
+      annuityCount,
+      individualCount,
+      jointCount,
+      achLinkCount,
+      rmdAgeCount,
+      inferred
+    };
+  }, [households]);
 
   // Parse Assessment Status/Stage
   const assessmentStatus = useMemo(() => {
@@ -468,6 +604,51 @@ export default function LiveReportClient({
       {/* Main Container */}
       <main className="flex-1 p-6 md:p-8 max-w-7xl w-full mx-auto space-y-8">
         
+        {/* REPORT METADATA HEADER */}
+        {assessment && (
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-4 bg-[#0e1731] border border-slate-800 p-4 rounded-xl shadow-lg text-xs">
+            <div className="md:col-span-1 border-b md:border-b-0 md:border-r border-slate-800/60 pb-3 md:pb-0 md:pr-4">
+              <span className="text-slate-500 block uppercase tracking-wider font-extrabold mb-1">Assessment Started</span>
+              <span className="text-slate-200 font-bold">
+                {new Date(assessment.createdAt).toLocaleDateString()}
+              </span>
+            </div>
+            <div className="md:col-span-1 border-b md:border-b-0 md:border-r border-slate-800/60 pb-3 md:pb-0 md:px-4">
+              <span className="text-slate-500 block uppercase tracking-wider font-extrabold mb-1">Last Updated</span>
+              <span className="text-slate-200 font-bold block">
+                {new Date(assessment.updatedAt).toLocaleDateString()}
+              </span>
+              <span className="text-slate-500 text-[10px]">
+                {new Date(assessment.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            </div>
+            <div className="md:col-span-1 border-b md:border-b-0 md:border-r border-slate-800/60 pb-3 md:pb-0 md:px-4">
+              <span className="text-slate-500 block uppercase tracking-wider font-extrabold mb-1">Last Updated By</span>
+              <span className="text-slate-200 font-bold">
+                {assessment.lastUpdatedBy || 'System'}
+              </span>
+            </div>
+            <div className="md:col-span-1 border-b md:border-b-0 md:border-r border-slate-800/60 pb-3 md:pb-0 md:px-4">
+              <span className="text-slate-500 block uppercase tracking-wider font-extrabold mb-1">Current Phase</span>
+              <span className="bg-[#d4af37]/20 text-[#d4af37] border border-[#d4af37]/35 font-extrabold text-[9px] px-2 py-0.5 mt-0.5 rounded inline-block">
+                {assessment.currentPhase || 'Initial Review'}
+              </span>
+            </div>
+            <div className="md:col-span-1 border-b md:border-b-0 md:border-r border-slate-800/60 pb-3 md:pb-0 md:px-4">
+              <span className="text-slate-500 block uppercase tracking-wider font-extrabold mb-1">Days Since Update</span>
+              <span className={`font-black text-sm mt-0.5 block ${daysSinceLastUpdate > 14 ? 'text-rose-400' : 'text-slate-200'}`}>
+                {daysSinceLastUpdate} {daysSinceLastUpdate === 1 ? 'day' : 'days'}
+              </span>
+            </div>
+            <div className="md:col-span-1 md:pl-4 flex flex-col justify-center">
+              <span className="text-slate-500 block uppercase tracking-wider font-extrabold mb-1">Progress Since Update</span>
+              <span className="text-slate-300 font-medium text-[10px] leading-tight block">
+                {progressSummary}
+              </span>
+            </div>
+          </div>
+        )}
+        
         {/* EXECUTIVE SUMMARY */}
         <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 bg-gradient-to-br from-[#1c2541] to-[#141b31] border border-slate-700/50 rounded-xl p-6 shadow-xl relative overflow-hidden flex flex-col justify-between">
@@ -522,93 +703,236 @@ export default function LiveReportClient({
                 <circle cx="80" cy="80" r="70" stroke="#0e1731" strokeWidth="12" fill="transparent" />
                 <circle cx="80" cy="80" r="70" stroke="#d4af37" strokeWidth="12" fill="transparent" 
                         strokeDasharray={2 * Math.PI * 70}
-                        strokeDashoffset={2 * Math.PI * 70 * (1 - (assessment?.overallReadinessScore || 0) / 100)}
+                        strokeDashoffset={2 * Math.PI * 70 * (1 - (isAssessmentEvaluated ? (assessment?.overallReadinessScore || 0) : 0) / 100)}
                         strokeLinecap="round" />
               </svg>
               <div className="absolute text-center">
-                <span className="text-4xl font-extrabold text-slate-100">{assessment?.overallReadinessScore || 0}%</span>
+                <span className="text-4xl font-extrabold text-slate-100">{isAssessmentEvaluated ? `${assessment?.overallReadinessScore || 0}%` : 'Pending'}</span>
                 <span className="text-[10px] text-slate-500 block font-bold uppercase tracking-wider mt-0.5">Readiness</span>
               </div>
             </div>
             <div className="mt-4 text-xs font-bold uppercase tracking-wide text-slate-400 px-4 py-1.5 rounded-full bg-slate-900/50 border border-slate-800">
-              {assessment && assessment.overallReadinessScore >= 80 ? 'Gold Status' : 'Needs Action'}
+              {isAssessmentEvaluated 
+                ? (assessment && assessment.overallReadinessScore >= 80 ? 'Gold Status' : 'Needs Action')
+                : 'Assessment Pending Verification'}
             </div>
           </div>
         </section>
 
-        {/* PROGRESS & CATEGORY BREAKDOWN */}
-        <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 bg-[#1c2541] border border-slate-700/50 rounded-xl p-6 shadow-xl space-y-4">
-            <h3 className="font-extrabold text-lg text-slate-100 flex items-center gap-2">
-              <Layers size={18} className="text-[#d4af37]" />
-              Readiness Performance Dimensions
-            </h3>
-            <div className="flex flex-col md:flex-row gap-6 items-center">
-              <div className="w-full md:w-1/2 h-64">
+        {/* PROGRESS & CATEGORY BREAKDOWN OR CRM ASSESSMENT SUMMARY */}
+        {!isAssessmentEvaluated ? (
+          <section className="bg-[#1c2541] border border-slate-700/50 rounded-xl p-6 shadow-xl space-y-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-800 pb-4 gap-4">
+              <div>
+                <h3 className="font-extrabold text-xl text-slate-100 flex items-center gap-2">
+                  <Shield className="text-[#d4af37]" size={22} />
+                  CRM Assessment Summary
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Transition baseline audit mapping verified data, inferred requirements, and unknown elements requiring validation.
+                </p>
+              </div>
+              <div className="bg-slate-900 border border-slate-800 px-3 py-1.5 rounded text-xs font-semibold text-slate-300">
+                Status: <span className="text-[#d4af37] font-bold">Assessment Pending Verification</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Category 1: What We Know */}
+              <div className="bg-slate-900/25 border border-slate-800 p-5 rounded-lg space-y-4">
+                <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
+                  <span className="h-5 w-5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-400/20 text-xs font-bold flex items-center justify-center font-mono">1</span>
+                  <h4 className="font-bold text-slate-200 uppercase tracking-wider text-xs font-mono">1. Verified (From CRM)</h4>
+                </div>
+                <div className="space-y-3.5 text-xs text-slate-400">
+                  <div>
+                    <span className="block font-bold text-slate-300">Custodians Represented</span>
+                    <div className="flex flex-wrap gap-1.5 mt-1.5">
+                      {crmStats.custodians.map((c, idx) => (
+                        <span key={idx} className="bg-slate-900 border border-slate-800 text-[10px] font-bold px-2 py-0.5 rounded text-slate-200">
+                          {c.name}: {c.count}
+                        </span>
+                      ))}
+                      {crmStats.custodians.length === 0 && <span className="italic text-slate-500">None detected</span>}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 pt-1 font-medium">
+                    <div>
+                      <span className="block font-bold text-slate-300">Households</span>
+                      <span className="text-slate-100 font-black text-sm block mt-0.5">{advisor.households || households.length}</span>
+                    </div>
+                    <div>
+                      <span className="block font-bold text-slate-300">Accounts</span>
+                      <span className="text-slate-100 font-black text-sm block mt-0.5">{advisor.accounts || households.reduce((sum, h) => sum + h.accounts.length, 0)}</span>
+                    </div>
+                    <div>
+                      <span className="block font-bold text-slate-300">Book AUM</span>
+                      <span className="text-slate-100 font-black text-sm block mt-0.5">${advisor.totalAum || 0}M</span>
+                    </div>
+                    <div>
+                      <span className="block font-bold text-slate-300">Annual Revenue</span>
+                      <span className="text-slate-100 font-black text-sm block mt-0.5">${advisor.annualRevenue?.toLocaleString() || 'N/A'}</span>
+                    </div>
+                  </div>
+                  <div className="space-y-1.5 pt-1">
+                    <span className="block font-bold text-slate-300">Ownership Structures</span>
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
+                      {crmStats.trustCount > 0 && <div className="flex justify-between"><span>Trusts:</span> <span className="font-semibold text-slate-200">{crmStats.trustCount}</span></div>}
+                      {crmStats.entityCount > 0 && <div className="flex justify-between"><span>Entities:</span> <span className="font-semibold text-slate-200">{crmStats.entityCount}</span></div>}
+                      {crmStats.retirementCount > 0 && <div className="flex justify-between"><span>Retirement:</span> <span className="font-semibold text-slate-200">{crmStats.retirementCount}</span></div>}
+                      {crmStats.individualCount > 0 && <div className="flex justify-between"><span>Individual:</span> <span className="font-semibold text-slate-200">{crmStats.individualCount}</span></div>}
+                      {crmStats.jointCount > 0 && <div className="flex justify-between"><span>Joint:</span> <span className="font-semibold text-slate-200">{crmStats.jointCount}</span></div>}
+                    </div>
+                  </div>
+                  <div className="space-y-1 bg-slate-950/20 p-2.5 rounded border border-slate-800/60 mt-2 text-[11px]">
+                    <div className="flex justify-between">
+                      <span>Advisory Accounts:</span>
+                      <span className="font-extrabold text-emerald-400">{crmStats.advisoryCount}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Brokerage Accounts:</span>
+                      <span className="font-bold text-slate-300">{crmStats.brokerageCount}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Category 2: What We Inferred */}
+              <div className="bg-slate-900/25 border border-slate-800 p-5 rounded-lg space-y-4 font-medium">
+                <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
+                  <span className="h-5 w-5 rounded bg-amber-500/10 text-amber-400 border border-amber-400/20 text-xs font-bold flex items-center justify-center font-mono">2</span>
+                  <h4 className="font-bold text-slate-200 uppercase tracking-wider text-xs font-mono">2. Inferred (Implied)</h4>
+                </div>
+                <div className="space-y-3.5 text-xs">
+                  {crmStats.inferred.map((inf, idx) => (
+                    <div key={idx} className="bg-slate-900/40 p-2.5 rounded border border-slate-800/80 space-y-1">
+                      <span className="font-bold text-slate-200 text-[11px] block">{inf.title}</span>
+                      <p className="text-[10px] text-slate-400 leading-normal">{inf.desc}</p>
+                    </div>
+                  ))}
+                  {crmStats.inferred.length === 0 && (
+                    <div className="text-center py-6 text-slate-500 italic">No transition requirements inferred.</div>
+                  )}
+                </div>
+              </div>
+
+              {/* Category 3: What Still Requires Verification */}
+              <div className="bg-slate-900/25 border border-slate-800 p-5 rounded-lg space-y-4">
+                <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
+                  <span className="h-5 w-5 rounded bg-[#d4af37]/10 text-[#d4af37] border border-[#d4af37]/20 text-xs font-bold flex items-center justify-center font-mono">3</span>
+                  <h4 className="font-bold text-slate-200 uppercase tracking-wider text-xs font-mono">3. Unknown (To Verify)</h4>
+                </div>
+                <div className="space-y-3 text-xs text-slate-400">
+                  <p className="text-[11px] text-slate-500 italic pb-1">
+                    Critical questions the CRM cannot verify. Initialized as "Unknown" pending CTS document verification:
+                  </p>
+                  {[
+                    { title: 'Trust documents on file', desc: 'Fiduciary setups and active signing trustees' },
+                    { title: 'Signed advisory agreements', desc: 'Valid billing authorizations and disclosures' },
+                    { title: 'Designated beneficiaries verified', desc: 'Primary and contingent beneficiaries designated' },
+                    { title: 'Trusted Contact verified', desc: 'Senior client elder protections established' },
+                    { title: 'Banking & ACH linkage documentation', desc: 'ACH direct links and authorizations validated' },
+                    { title: 'Power of Attorney (POA)', desc: 'Valid POA signatures and signing boundaries' }
+                  ].map((unk, idx) => (
+                    <div key={idx} className="flex gap-2.5 items-start bg-slate-950/20 p-2 rounded border border-slate-800/40">
+                      <span className="text-[9px] px-1 py-0.5 rounded font-mono font-bold bg-slate-900 text-slate-500 shrink-0 uppercase">Unknown</span>
+                      <div className="space-y-0.5">
+                        <span className="font-semibold text-slate-300 text-[11px] block">{unk.title}</span>
+                        <p className="text-[10px] text-slate-500">{unk.desc}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Category 4: Verified During Assessment Notice */}
+            <div className="bg-[#d4af37]/5 border border-[#d4af37]/20 p-4 rounded-lg flex items-start gap-3.5">
+              <div className="p-2 rounded bg-[#d4af37]/10 shrink-0">
+                <CheckCircle2 size={16} className="text-[#d4af37]" />
+              </div>
+              <div className="space-y-1">
+                <h4 className="font-bold text-xs text-slate-200 uppercase tracking-wider font-mono">4. Verified During Assessment</h4>
+                <p className="text-xs text-slate-400 leading-normal">
+                  As the CTS team audits physical files, requirements shift from <span className="text-[#d4af37] font-semibold">Unknown</span> to <span className="text-emerald-400 font-semibold">Verified (Present)</span>, <span className="text-rose-400 font-semibold">Missing</span>, or <span className="text-amber-400 font-semibold">Needs Review</span>. Index scores recalculate dynamically.
+                </p>
+              </div>
+            </div>
+          </section>
+        ) : (
+          <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 bg-[#1c2541] border border-slate-700/50 rounded-xl p-6 shadow-xl space-y-4">
+              <h3 className="font-extrabold text-lg text-slate-100 flex items-center gap-2">
+                <Layers size={18} className="text-[#d4af37]" />
+                Readiness Performance Dimensions
+              </h3>
+              <div className="flex flex-col md:flex-row gap-6 items-center">
+                <div className="w-full md:w-1/2 h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RadarChart cx="50%" cy="50%" outerRadius="80%" data={chartData}>
+                      <PolarGrid stroke="#334155" />
+                      <PolarAngleAxis dataKey="subject" stroke="#94a3b8" fontSize={10} fontWeight="bold" />
+                      <PolarRadiusAxis angle={30} domain={[0, 100]} stroke="#475569" fontSize={8} />
+                      <Radar name="Score" dataKey="score" stroke="#d4af37" fill="#d4af37" fillOpacity={0.25} />
+                    </RadarChart>
+                  </ResponsiveContainer>
+                </div>
+
+                <div className="w-full md:w-1/2 grid grid-cols-1 gap-3.5 text-xs">
+                  {[
+                    { label: 'Client Data Quality', score: assessment?.clientDataScore, color: 'border-blue-500' },
+                    { label: 'KYC & Documentation', score: assessment?.kycDocumentationScore, color: 'border-emerald-500' },
+                    { label: 'Transfer Complexity', score: assessment?.transferComplexityScoreVal, color: 'border-yellow-500' },
+                    { label: 'Operational Structure', score: assessment?.operationalScore, color: 'border-purple-500' },
+                    { label: 'Compliance Protocol', score: assessment?.complianceProtocolScore, color: 'border-rose-500' },
+                    { label: 'Client Communication', score: assessment?.communicationScore, color: 'border-[#d4af37]' }
+                  ].map((item, i) => (
+                    <div key={i} className={`p-3 bg-slate-900/35 rounded-lg border-l-4 ${item.color} border border-slate-800 flex justify-between items-center`}>
+                      <span className="font-bold text-slate-300">{item.label}</span>
+                      <span className="font-black text-slate-100 text-sm">{item.score || 0}%</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-[#1c2541] border border-slate-700/50 rounded-xl p-6 shadow-xl flex flex-col justify-between gap-6">
+              <h3 className="font-extrabold text-lg text-slate-100 flex items-center gap-2">
+                <TrendingUp size={18} className="text-[#d4af37]" />
+                Progress Over Time
+              </h3>
+              <div className="flex-1 min-h-[160px] h-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <RadarChart cx="50%" cy="50%" outerRadius="80%" data={chartData}>
-                    <PolarGrid stroke="#334155" />
-                    <PolarAngleAxis dataKey="subject" stroke="#94a3b8" fontSize={10} fontWeight="bold" />
-                    <PolarRadiusAxis angle={30} domain={[0, 100]} stroke="#475569" fontSize={8} />
-                    <Radar name="Score" dataKey="score" stroke="#d4af37" fill="#d4af37" fillOpacity={0.25} />
-                  </RadarChart>
+                  <LineChart data={progressData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                    <XAxis dataKey="name" stroke="#94a3b8" fontSize={10} fontWeight="bold" />
+                    <YAxis domain={[0, 100]} stroke="#94a3b8" fontSize={10} />
+                    <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', color: '#fff' }} />
+                    <Legend verticalAlign="top" height={36} iconSize={10} wrapperStyle={{ fontSize: '10px', fontWeight: 'bold' }} />
+                    <Line type="monotone" dataKey="Score" stroke="#d4af37" strokeWidth={3} activeDot={{ r: 8 }} />
+                    <Line type="monotone" dataKey="PacketCompletion" name="Packets Complete %" stroke="#3b82f6" strokeWidth={2} />
+                  </LineChart>
                 </ResponsiveContainer>
               </div>
-
-              <div className="w-full md:w-1/2 grid grid-cols-1 gap-3.5 text-xs">
-                {[
-                  { label: 'Client Data Quality', score: assessment?.clientDataScore, color: 'border-blue-500' },
-                  { label: 'KYC & Documentation', score: assessment?.kycDocumentationScore, color: 'border-emerald-500' },
-                  { label: 'Transfer Complexity', score: assessment?.transferComplexityScoreVal, color: 'border-yellow-500' },
-                  { label: 'Operational Structure', score: assessment?.operationalScore, color: 'border-purple-500' },
-                  { label: 'Compliance Protocol', score: assessment?.complianceProtocolScore, color: 'border-rose-500' },
-                  { label: 'Client Communication', score: assessment?.communicationScore, color: 'border-[#d4af37]' }
-                ].map((item, i) => (
-                  <div key={i} className={`p-3 bg-slate-900/35 rounded-lg border-l-4 ${item.color} border border-slate-800 flex justify-between items-center`}>
-                    <span className="font-bold text-slate-300">{item.label}</span>
-                    <span className="font-black text-slate-100 text-sm">{item.score || 0}%</span>
-                  </div>
-                ))}
+              <div className="grid grid-cols-3 gap-2 bg-slate-900/40 p-3 rounded-lg border border-slate-800/80 text-center text-[10px]">
+                <div>
+                  <span className="text-slate-500 block">Initial Score</span>
+                  <span className="text-slate-200 font-extrabold text-sm">{advisor.initialScore}%</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block">Current Score</span>
+                  <span className="text-[#d4af37] font-extrabold text-sm">{assessment?.overallReadinessScore || 0}%</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block">Total Gain</span>
+                  <span className="text-emerald-400 font-extrabold text-sm flex items-center justify-center">
+                    +{Math.max(0, Math.round((assessment?.overallReadinessScore || 0) - advisor.initialScore))}%
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
-
-          <div className="bg-[#1c2541] border border-slate-700/50 rounded-xl p-6 shadow-xl flex flex-col justify-between gap-6">
-            <h3 className="font-extrabold text-lg text-slate-100 flex items-center gap-2">
-              <TrendingUp size={18} className="text-[#d4af37]" />
-              Progress Over Time
-            </h3>
-            <div className="flex-1 min-h-[160px] h-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={progressData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                  <XAxis dataKey="name" stroke="#94a3b8" fontSize={10} fontWeight="bold" />
-                  <YAxis domain={[0, 100]} stroke="#94a3b8" fontSize={10} />
-                  <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', color: '#fff' }} />
-                  <Legend verticalAlign="top" height={36} iconSize={10} wrapperStyle={{ fontSize: '10px', fontWeight: 'bold' }} />
-                  <Line type="monotone" dataKey="Score" stroke="#d4af37" strokeWidth={3} activeDot={{ r: 8 }} />
-                  <Line type="monotone" dataKey="PacketCompletion" name="Packets Complete %" stroke="#3b82f6" strokeWidth={2} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="grid grid-cols-3 gap-2 bg-slate-900/40 p-3 rounded-lg border border-slate-800/80 text-center text-[10px]">
-              <div>
-                <span className="text-slate-500 block">Initial Score</span>
-                <span className="text-slate-200 font-extrabold text-sm">{advisor.initialScore}%</span>
-              </div>
-              <div>
-                <span className="text-slate-500 block">Current Score</span>
-                <span className="text-[#d4af37] font-extrabold text-sm">{assessment?.overallReadinessScore || 0}%</span>
-              </div>
-              <div>
-                <span className="text-slate-500 block">Total Gain</span>
-                <span className="text-emerald-400 font-extrabold text-sm flex items-center justify-center">
-                  +{Math.max(0, Math.round((assessment?.overallReadinessScore || 0) - advisor.initialScore))}%
-                </span>
-              </div>
-            </div>
-          </div>
-        </section>
+          </section>
+        )}
 
         {/* BOOK OVERVIEW & FINDINGS METRICS */}
         <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -984,6 +1308,42 @@ export default function LiveReportClient({
           </div>
         </section>
 
+        {/* PUBLIC ADVISOR NOTES */}
+        {notes.length > 0 && (
+          <section className="bg-[#1c2541] border border-slate-700/50 rounded-xl p-6 shadow-xl space-y-4">
+            <h3 className="font-extrabold text-lg text-slate-100 flex items-center gap-2">
+              <FileText size={18} className="text-[#d4af37]" />
+              Consultant Notes & Practice Guidance
+            </h3>
+            <p className="text-xs text-slate-400 font-medium">
+              Important guidance, action plans, and comments provided by your transition consulting team.
+            </p>
+
+            <div className="space-y-3.5">
+              {notes.map((note) => (
+                <div key={note.id} className="p-4 bg-slate-900/30 border border-slate-800 rounded-lg space-y-2">
+                  <div className="flex justify-between items-start gap-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-extrabold text-slate-200 text-xs">
+                        {note.createdByFullName}
+                      </span>
+                      <span className="px-1.5 py-0.2 rounded text-[8px] font-bold bg-[#d4af37]/10 text-[#d4af37] border border-[#d4af37]/20">
+                        {note.noteType}
+                      </span>
+                    </div>
+                    <span className="text-[9px] text-slate-500 font-bold">
+                      {new Date(note.createdAt).toLocaleString()}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed break-words whitespace-pre-wrap">
+                    {note.noteBody}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         {/* RECENT ACTIVITY */}
         <section className="bg-[#1c2541] border border-slate-700/50 rounded-xl p-6 shadow-xl space-y-4">
           <h3 className="font-extrabold text-lg text-slate-100 flex items-center gap-2">
@@ -995,21 +1355,41 @@ export default function LiveReportClient({
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {recentActivities.map((act, idx) => (
-              <div key={idx} className="bg-slate-900/40 border border-slate-800/80 p-3.5 rounded-lg flex items-start gap-3">
-                <div className="p-2 rounded bg-slate-950/30 border border-slate-800 mt-0.5 shrink-0">
-                  {act.icon}
-                </div>
-                <div className="space-y-1">
-                  <div className="flex justify-between items-baseline gap-4">
-                    <span className="font-bold text-slate-200 text-xs block">{act.title}</span>
-                    <span className="text-[9px] text-slate-500 font-bold shrink-0">{act.timestamp}</span>
+            {activities.slice(0, 12).map((act) => {
+              let actionIcon = <FileText size={14} className="text-blue-400" />;
+              if (act.action === 'Verify') actionIcon = <CheckCircle2 size={14} className="text-emerald-400" />;
+              else if (act.action === 'Resolve') actionIcon = <CheckCircle2 size={14} className="text-teal-400" />;
+              else if (act.action === 'Delete') actionIcon = <AlertCircle size={14} className="text-rose-400" />;
+              else if (act.action === 'Create') actionIcon = <AlertCircle size={14} className="text-green-400" />;
+              else if (act.action === 'Recalculate') actionIcon = <TrendingUp size={14} className="text-purple-400" />;
+
+              return (
+                <div key={act.id} className="bg-slate-900/40 border border-slate-800/80 p-3.5 rounded-lg flex items-start gap-3">
+                  <div className="p-2 rounded bg-slate-950/30 border border-slate-800 mt-0.5 shrink-0">
+                    {actionIcon}
                   </div>
-                  <p className="text-[11px] text-slate-400 font-medium">{act.description}</p>
+                  <div className="space-y-1 w-full">
+                    <div className="flex justify-between items-baseline gap-4">
+                      <span className="font-bold text-slate-200 text-xs block">
+                        {act.action}: {act.objectAffected}
+                      </span>
+                      <span className="text-[9px] text-slate-500 font-bold shrink-0">
+                        {new Date(act.createdAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 font-medium">{act.description}</p>
+                    {(act.previousValue || act.newValue) && (
+                      <div className="flex items-center gap-1.5 text-[9px] font-mono text-slate-500 font-bold mt-1">
+                        {act.previousValue && <span className="line-through">{act.previousValue}</span>}
+                        {act.previousValue && <span>→</span>}
+                        <span className="text-emerald-400">{act.newValue}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
-            {recentActivities.length === 0 && (
+              );
+            })}
+            {activities.length === 0 && (
               <div className="col-span-2 text-center py-6 text-xs text-slate-500 italic">
                 No recent activity logged.
               </div>
