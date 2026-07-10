@@ -427,7 +427,7 @@ export default function DashboardClient({ initialAdvisors }: { initialAdvisors: 
                         )}
                       </td>
                       <td className="px-6 py-4 text-right font-medium text-slate-300">
-                        {adv.totalAum ? `$${adv.totalAum}M` : 'N/A'}
+                        {adv.totalAum ? `$${Number(adv.totalAum).toFixed(1)}M` : 'N/A'}
                       </td>
                       <td className="px-6 py-4 text-center">
                         {latestScore !== null && rating ? (

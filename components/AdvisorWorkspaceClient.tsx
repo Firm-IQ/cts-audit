@@ -50,6 +50,106 @@ const criticalItemKeys = [
 
 
 
+export interface AuditDetails {
+  evidence: string;
+  reason: string;
+  action: string;
+}
+
+export function getRequirementAuditDetails(key: string, status: string, notes: string | null): AuditDetails {
+  const isVerified = ['Verified', 'Inferred', 'Present'].includes(status);
+  const isMissing = status === 'Missing';
+  
+  const notesText = notes || '';
+  
+  let evidence = notesText ? notesText : 'No evidence found in CRM.';
+  let reason = isVerified ? 'Requirement satisfied.' : 'Information/documentation is unverified.';
+  let action = isVerified ? 'None.' : 'Request outstanding item from client.';
+
+  if (key.startsWith('client_')) {
+    if (key === 'client_addressCurrent') {
+      evidence = isVerified ? (notesText || 'Active address exists in CRM.') : 'Address is missing or verification date is stale.';
+      reason = isVerified ? 'CRM data matches requirement.' : 'Missing verified current address.';
+      action = isVerified ? 'None.' : 'Confirm client address and update.';
+    } else if (key === 'client_emailCurrent') {
+      evidence = isVerified ? (notesText || 'Valid email address exists in CRM.') : 'Email is blank or invalid in CRM.';
+      reason = isVerified ? 'CRM data matches requirement.' : 'Stale or missing email address.';
+      action = isVerified ? 'None.' : 'Obtain valid email from client.';
+    } else if (key === 'client_phoneCurrent') {
+      evidence = isVerified ? (notesText || 'Valid phone number exists in CRM.') : 'Phone number is blank in CRM.';
+      reason = isVerified ? 'CRM data matches requirement.' : 'Missing contact phone number.';
+      action = isVerified ? 'None.' : 'Obtain client phone number.';
+    } else if (key === 'client_trustedContact') {
+      evidence = isVerified ? (notesText || 'Trusted contact details found in CRM.') : 'No trusted contact on file.';
+      reason = isVerified ? 'Trusted contact verified.' : 'Trusted contact form not yet completed.';
+      action = isVerified ? 'None.' : 'Request Trusted Contact Form from client.';
+    } else if (key === 'client_relationshipsVerified') {
+      evidence = isVerified ? (notesText || 'Household membership and relationships validated.') : 'Household links unverified.';
+      reason = isVerified ? 'Valid relationships.' : 'Verify household relationships.';
+      action = isVerified ? 'None.' : 'Confirm family/account links.';
+    }
+  } else if (key.startsWith('kyc_')) {
+    if (key === 'kyc_riskTolerance') {
+      evidence = isVerified ? (notesText || 'Risk profile is current and verified.') : 'Risk profile lacks recent review date.';
+      reason = isVerified ? 'Active risk tolerance.' : 'Risk profile is stale or needs verification.';
+      action = isVerified ? 'None.' : 'Conduct risk tolerance questionnaire review.';
+    } else if (key === 'kyc_investmentObjectives') {
+      evidence = isVerified ? (notesText || 'Investment objectives verified in CRM.') : 'Stale or missing objectives.';
+      reason = isVerified ? 'Active objectives.' : 'Investment objectives must be reviewed annually.';
+      action = isVerified ? 'None.' : 'Confirm investment objectives with client.';
+    } else if (key === 'kyc_timeHorizon') {
+      evidence = isVerified ? (notesText || 'Time horizon is recorded.') : 'Stale or missing time horizon.';
+      reason = isVerified ? 'Verified.' : 'Time horizon needs review.';
+      action = isVerified ? 'None.' : 'Update time horizon.';
+    } else if (key === 'kyc_liquidityNeeds') {
+      evidence = isVerified ? (notesText || 'Liquidity needs documented.') : 'Stale or missing liquidity needs.';
+      reason = isVerified ? 'Verified.' : 'Liquidity needs require review.';
+      action = isVerified ? 'None.' : 'Update liquidity needs.';
+    } else if (key === 'kyc_incomeNetWorth') {
+      evidence = isVerified ? (notesText || 'Income and Net Worth verified.') : 'Stale or missing Net Worth data.';
+      reason = isVerified ? 'Verified.' : 'Income / Net Worth needs review.';
+      action = isVerified ? 'None.' : 'Update Net Worth details.';
+    } else if (key === 'kyc_lastReview') {
+      evidence = isVerified ? (notesText || 'Last review date is current.') : 'Last annual review date is stale.';
+      reason = isVerified ? 'Verified.' : 'Annual review is overdue.';
+      action = isVerified ? 'None.' : 'Schedule client annual review.';
+    }
+  } else if (key.startsWith('doc_')) {
+    if (key === 'doc_advisoryAgreement') {
+      evidence = isVerified ? (notesText || 'Signed Advisory Agreement exists in document vault.') : 'No signed Advisory Agreement found.';
+      reason = isVerified ? 'Agreement fully executed.' : 'Missing client signature on advisory agreement.';
+      action = isVerified ? 'None.' : 'Locate or request signed Advisory Agreement.';
+    } else if (key === 'doc_accountApplication') {
+      evidence = isVerified ? (notesText || 'Account application signed and processed.') : 'Account application not found.';
+      reason = isVerified ? 'Application complete.' : 'Missing account application.';
+      action = isVerified ? 'None.' : 'Request Account Application.';
+    } else if (key === 'doc_beneficiaryDesignation') {
+      evidence = isVerified ? (notesText || 'Beneficiary designations verified.') : 'No beneficiary designation form found.';
+      reason = isVerified ? 'Designations complete.' : 'Missing beneficiary designation.';
+      action = isVerified ? 'None.' : 'Request Beneficiary Designation Form.';
+    }
+  } else if (key.startsWith('trust_')) {
+    evidence = isVerified ? (notesText || 'Trust documentation uploaded and verified.') : 'Stale or missing trust documentation.';
+    reason = isVerified ? 'Trust details verified.' : 'Trust documentation required.';
+    action = isVerified ? 'None.' : `Request ${key.replace('trust_', '').replace('taxId', 'Tax ID').replace('certification', 'Trust Certification')} document.`;
+  } else if (key.startsWith('entity_')) {
+    evidence = isVerified ? (notesText || 'Corporate entity documentation verified.') : 'Corporate documentation missing.';
+    reason = isVerified ? 'Entity details verified.' : 'Corporate/LLC documentation required.';
+    action = isVerified ? 'None.' : `Request corporate ${key.replace('entity_', '')} document.`;
+  } else if (key.startsWith('estate_') || key.startsWith('retire_inheritedIra')) {
+    evidence = isVerified ? (notesText || 'Inherited/estate records verified.') : 'Stale or missing inherited/estate documents.';
+    reason = isVerified ? 'Estate/death records verified.' : 'Estate/death documentation required.';
+    action = isVerified ? 'None.' : `Request estate ${key.replace('estate_', '').replace('Letters', 'Letters Testamentary')} document.`;
+  }
+
+  if (isMissing) {
+    reason = 'Explicitly marked as missing.';
+    action = 'Collect and submit completed forms.';
+  }
+
+  return { evidence, reason, action };
+}
+
 interface Finding {
   id: string;
   assessmentId: string;
@@ -1386,7 +1486,7 @@ export default function AdvisorWorkspaceClient({
   // Checklist handlers
   const handleOpenChecklist = (acc: Account) => {
     setActiveChecklistAccount(acc);
-    setChecklistItemsState(acc.checklistItems);
+    setChecklistItemsState((acc.checklistItems || []).filter(item => item.status !== 'Not Applicable'));
     setShowChecklistModal(true);
   };
 
@@ -1752,7 +1852,7 @@ export default function AdvisorWorkspaceClient({
           <div className="grid grid-cols-2 gap-x-6 gap-y-1 bg-slate-900/40 p-4 rounded-lg border border-slate-800 text-xs">
             <div>
               <span className="text-slate-500 block">Total AUM:</span>
-              <span className="text-slate-200 font-bold">{advisor.totalAum ? `$${advisor.totalAum}M` : 'N/A'}</span>
+              <span className="text-slate-200 font-bold">{advisor.totalAum ? `$${Number(advisor.totalAum).toFixed(1)}M` : 'N/A'}</span>
             </div>
             <div>
               <span className="text-slate-500 block">Protocol Status:</span>
@@ -1826,7 +1926,7 @@ export default function AdvisorWorkspaceClient({
                           </div>
                           <div className="flex justify-between">
                             <span>Total Book AUM</span>
-                            <span className="font-bold text-slate-200">${advisor.totalAum || 0}M</span>
+                            <span className="font-bold text-slate-200">${Number(advisor.totalAum || 0).toFixed(1)}M</span>
                           </div>
                           <div className="flex justify-between">
                             <span>Annual Revenue</span>
@@ -1850,59 +1950,91 @@ export default function AdvisorWorkspaceClient({
                         </div>
                       </div>
 
-                      {/* What We Inferred */}
-                      <div className="space-y-3.5 bg-slate-900/10 p-4 rounded border border-slate-800">
-                        <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
-                          <span className="h-5 w-5 rounded bg-amber-500/10 text-amber-400 border border-amber-400/20 text-[10px] font-bold flex items-center justify-center font-mono">2</span>
-                          <h4 className="font-bold text-slate-200 uppercase tracking-wider text-[11px] font-mono">2. Inferred Requirements</h4>
+                      {/* Dynamic Outstanding Audit checklist Summary */}
+                      <div className="lg:col-span-2 space-y-4 bg-slate-900/10 p-5 rounded-lg border border-slate-800">
+                        <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
+                          <Shield size={18} className="text-[#d4af37]" />
+                          <h4 className="font-extrabold text-slate-100 uppercase tracking-wider text-xs font-mono">
+                            Outstanding Items: What does this advisor still need to collect?
+                          </h4>
                         </div>
-                        <div className="space-y-1.5 max-h-[180px] overflow-y-auto pr-1">
-                          {(() => {
-                            const inferred = [];
-                            const trustCount = households.reduce((sum, h) => sum + h.accounts.filter(a => a.type === 'Trust').length, 0);
-                            const inheritedIraCount = households.reduce((sum, h) => sum + h.accounts.filter(a => a.type === 'Inherited IRA').length, 0);
-                            const entityCount = households.reduce((sum, h) => sum + h.accounts.filter(a => a.type === 'Entity').length, 0);
-                            const retirementCount = households.reduce((sum, h) => sum + h.accounts.filter(a => ['IRA', 'Roth IRA', 'SEP IRA', 'SIMPLE IRA', '401(k)'].includes(a.type)).length, 0);
-                            const altCount = households.reduce((sum, h) => sum + h.accounts.filter(a => a.type === 'Alternative Investment').length, 0);
-                            const annuityCount = households.reduce((sum, h) => sum + h.accounts.filter(a => a.type === 'Annuity').length, 0);
-                            
-                            if (trustCount > 0) inferred.push('Trustee Authorization Review');
-                            if (inheritedIraCount > 0) inferred.push('Inherited IRA Beneficiary Setup');
-                            if (entityCount > 0) inferred.push('Entity Authority Review');
-                            if (retirementCount > 0) inferred.push('Retirement Beneficiary Setup');
-                            if (altCount > 0) inferred.push('Alt Asset Custodian Clearance');
-                            if (annuityCount > 0) inferred.push('Annuity Carrier Transfer Clearance');
-                            
-                            return inferred.map((inf, idx) => (
-                              <div key={idx} className="bg-slate-900/60 p-2 rounded border border-slate-800 text-[11px] font-semibold text-slate-300">
-                                ✓ {inf}
-                              </div>
-                            ));
-                          })()}
-                        </div>
-                      </div>
+                        
+                        {(() => {
+                          const allAccs = households.flatMap(h => h.accounts);
+                          const allItems = allAccs.flatMap(a => a.checklistItems || []);
+                          
+                          // Filter for unverified outstanding requirements (Needs Attention or Missing)
+                          const outstanding = allItems.filter(item => 
+                            ['Needs Attention', 'Unknown', 'Needs Review', 'Missing'].includes(item.status) &&
+                            item.status !== 'Not Applicable'
+                          );
 
-                      {/* What Still Requires Verification */}
-                      <div className="space-y-3.5 bg-slate-900/10 p-4 rounded border border-slate-800">
-                        <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
-                          <span className="h-5 w-5 rounded bg-[#d4af37]/10 text-[#d4af37] border border-[#d4af37]/20 text-[10px] font-bold flex items-center justify-center font-mono">3</span>
-                          <h4 className="font-bold text-slate-200 uppercase tracking-wider text-[11px] font-mono">3. Unknown (To Be Verified)</h4>
-                        </div>
-                        <div className="space-y-1.5 max-h-[180px] overflow-y-auto pr-1">
-                          {[
-                            'Trust documents on file',
-                            'Signed advisory agreement',
-                            'Current beneficiaries verified',
-                            'Trusted Contact verified',
-                            'Banking linkage documentation',
-                            'Power of Attorney (POA) review'
-                          ].map((unk, idx) => (
-                            <div key={idx} className="flex items-center gap-2 bg-slate-950/20 px-2.5 py-1.5 rounded border border-slate-800/40 text-[10px] text-slate-400 font-semibold">
-                              <span className="h-1.5 w-1.5 rounded-full bg-slate-500"></span>
-                              {unk}
+                          if (outstanding.length === 0) {
+                            return (
+                              <p className="text-emerald-400 text-xs font-semibold">
+                                ✓ All applicable requirements are Verified! No outstanding documents or info needed to begin transition.
+                              </p>
+                            );
+                          }
+
+                          // Group by item name
+                          const counts: Record<string, { count: number; action: string; isCritical: boolean; statusGroup: Record<string, number> }> = {};
+                          outstanding.forEach(item => {
+                            const name = item.itemName;
+                            const isCrit = item.requirement?.critical || criticalItemKeys.includes(item.itemKey);
+                            const details = getRequirementAuditDetails(item.itemKey, item.status, item.notes);
+                            if (!counts[name]) {
+                              counts[name] = { 
+                                count: 0, 
+                                action: details.action, 
+                                isCritical: isCrit,
+                                statusGroup: {} 
+                              };
+                            }
+                            counts[name].count++;
+                            const displayStatus = item.status === 'Missing' ? 'Missing' : 'Needs Attention';
+                            counts[name].statusGroup[displayStatus] = (counts[name].statusGroup[displayStatus] || 0) + 1;
+                          });
+
+                          const sorted = Object.entries(counts).sort((a, b) => b[1].count - a[1].count);
+
+                          return (
+                            <div className="space-y-3.5 max-h-[300px] overflow-y-auto pr-1">
+                              <p className="text-slate-400 text-[11px] font-medium leading-relaxed">
+                                The transition audit identifies the following outstanding items that must be collected from clients or verified before the transition can begin:
+                              </p>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                {sorted.map(([name, val], idx) => (
+                                  <div key={idx} className="bg-slate-950/45 p-3 rounded border border-slate-800/80 flex flex-col justify-between space-y-2">
+                                    <div className="flex justify-between items-start">
+                                      <span className="font-bold text-xs text-slate-200 flex items-center gap-1.5">
+                                        {val.isCritical && (
+                                          <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse shrink-0"></span>
+                                        )}
+                                        {name}
+                                      </span>
+                                      <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400 shrink-0">
+                                        {val.count} accounts
+                                      </span>
+                                    </div>
+                                    <div className="text-[10px] text-slate-500 font-semibold space-y-1">
+                                      <div>
+                                        Status: {Object.entries(val.statusGroup).map(([st, c]) => (
+                                          <span key={st} className={`mr-2 ${st === 'Missing' ? 'text-rose-400' : 'text-[#d4af37]'}`}>
+                                            ● {st} ({c})
+                                          </span>
+                                        ))}
+                                      </div>
+                                      <div className="text-slate-400 font-bold border-t border-slate-900 pt-1">
+                                        Action: {val.action}
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
                             </div>
-                          ))}
-                        </div>
+                          );
+                        })()}
                       </div>
                     </div>
 
@@ -2778,7 +2910,7 @@ export default function AdvisorWorkspaceClient({
                             <span className="text-[8px] text-slate-500 block uppercase font-bold tracking-wider">Readiness</span>
                           </div>
                           <Badge variant="neutral" className="bg-slate-800 text-slate-300 border border-slate-700 font-semibold">
-                            AUM: {hh.totalAum !== null ? `$${hh.totalAum}M` : 'N/A'}
+                            AUM: {hh.totalAum !== null ? `$${Number(hh.totalAum).toFixed(1)}M` : 'N/A'}
                           </Badge>
                           <Badge variant="neutral" className="bg-slate-800 text-[#d4af37] border border-[#d4af37]/35 font-semibold">
                             Rev: {hh.revenue !== null ? `$${hh.revenue.toLocaleString()}` : 'N/A'}
@@ -3753,21 +3885,52 @@ export default function AdvisorWorkspaceClient({
                                     Notes ({notesList.filter(n => n.checklistItemId === item.id).length})
                                   </button>
                                   <select
-                                    value={item.status}
-                                    onChange={e => handleUpdateChecklistItem(item.itemKey, 'status', e.target.value)}
-                                    className="bg-[#0b1329] border border-slate-700 rounded px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-[#d4af37] w-full sm:w-40"
-                                  >
-                                    <option value="Unknown">Unknown</option>
-                                    <option value="Verified">Verified</option>
-                                    <option value="Inferred">Inferred</option>
-                                    <option value="Present">Present</option>
-                                    <option value="Missing">Missing</option>
-                                    <option value="Needs Review">Needs Review</option>
-                                    <option value="Not Applicable">Not Applicable</option>
-                                  </select>
+                                     value={
+                                       item.status === 'Unknown' || item.status === 'Needs Review' || item.status === 'Needs Attention'
+                                         ? 'Needs Attention'
+                                         : item.status === 'Inferred' || item.status === 'Present' || item.status === 'Verified'
+                                         ? 'Verified'
+                                         : item.status
+                                     }
+                                     onChange={e => handleUpdateChecklistItem(item.itemKey, 'status', e.target.value)}
+                                     className="bg-[#0b1329] border border-slate-700 rounded px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-[#d4af37] w-full sm:w-40"
+                                   >
+                                     <option value="Verified">Verified</option>
+                                     <option value="Needs Attention">Needs Attention</option>
+                                     <option value="Missing">Missing</option>
+                                     <option value="Not Applicable">Not Applicable</option>
+                                   </select>
                                 </div>
                               </div>
                           
+                              {/* Dynamic Evidence Source, Reason, Recommended Action */}
+                              {(() => {
+                                 const details = getRequirementAuditDetails(item.itemKey, item.status, item.notes);
+                                 const displayStatus = item.status === 'Unknown' || item.status === 'Needs Review' || item.status === 'Needs Attention'
+                                   ? 'Needs Attention'
+                                   : item.status === 'Inferred' || item.status === 'Present' || item.status === 'Verified'
+                                   ? 'Verified'
+                                   : item.status;
+                                 return (
+                                   <div className="text-[11px] text-slate-400 grid grid-cols-1 md:grid-cols-3 gap-3 bg-slate-950/40 p-2.5 rounded border border-slate-850">
+                                     <div>
+                                       <span className="text-slate-500 font-bold block uppercase text-[8px] tracking-wider mb-0.5">Evidence Source</span>
+                                       <span className="text-slate-300 font-medium">{details.evidence}</span>
+                                     </div>
+                                     <div>
+                                       <span className="text-slate-500 font-bold block uppercase text-[8px] tracking-wider mb-0.5">Reason</span>
+                                       <span className="text-slate-300 font-medium">{details.reason}</span>
+                                     </div>
+                                     <div>
+                                       <span className="text-slate-500 font-bold block uppercase text-[8px] tracking-wider mb-0.5">Recommended Action</span>
+                                       <span className={displayStatus === 'Verified' ? 'text-slate-500 font-normal' : displayStatus === 'Missing' ? 'text-rose-400 font-bold' : 'text-[#d4af37] font-bold'}>
+                                         {details.action}
+                                       </span>
+                                     </div>
+                                   </div>
+                                 );
+                               })()}
+
                               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                                 <div className="md:col-span-2">
                                   <input

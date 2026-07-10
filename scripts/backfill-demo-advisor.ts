@@ -141,7 +141,7 @@ async function main() {
         notes = 'No trusted contact person on file.';
         isOverridden = true;
       } else if (item.itemKey === reqBeneficiary && hasBenDef) {
-        status = 'Needs Review';
+        status = 'Needs Attention';
         notes = 'Beneficiary designation requires verification or signature.';
         isOverridden = true;
       } else if (item.itemKey === reqVoidedCheck && hasAchDef) {
@@ -161,11 +161,11 @@ async function main() {
         notes = 'Incomplete inherited adoption or original owner documentation.';
         isOverridden = true;
       } else if (item.itemKey === reqLastReview && hasKycDef) {
-        status = 'Needs Review';
+        status = 'Needs Attention';
         notes = 'KYC last review date was more than 24 months ago.';
         isOverridden = true;
       } else if (item.itemKey === reqInvestmentObjectives && hasObjDef) {
-        status = 'Needs Review';
+        status = 'Needs Attention';
         notes = 'Stale risk profile or mismatch between holding asset allocation.';
         isOverridden = true;
       }
@@ -180,7 +180,7 @@ async function main() {
         } else if (isGroup2) {
           if (isPaperwork) {
             if (item.itemKey === 'doc_advisoryAgreement') {
-              status = 'Unknown';
+              status = 'Needs Attention';
               notes = 'CRM cannot verify physical/legal paperwork presence.';
             } else {
               status = 'Verified';
@@ -271,10 +271,8 @@ async function main() {
       let multiplier = 0.0;
       if (['Present', 'Verified', 'Inferred'].includes(item.status)) {
         multiplier = 1.0;
-      } else if (item.status === 'Unknown') {
+      } else if (['Needs Attention', 'Unknown', 'Needs Review'].includes(item.status)) {
         multiplier = 0.5;
-      } else if (item.status === 'Needs Review') {
-        multiplier = 0.25;
       } else if (item.status === 'Missing') {
         multiplier = 0.0;
         if (item.requirement?.critical) {

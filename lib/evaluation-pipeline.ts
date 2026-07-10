@@ -4,22 +4,158 @@ import { calculateReadinessScores } from './scoring';
 /**
  * Checks if a requirement applies to an account based on type and registration.
  */
-export function doesRequirementApply(appliesToAccountTypes: string, accType: string, accRegistration: string | null): boolean {
-  const normalizedApplies = appliesToAccountTypes.trim().toLowerCase();
-  if (normalizedApplies === 'all') return true;
-
-  const appliesList = normalizedApplies.split(',').map(s => s.trim().toLowerCase());
+export function doesRequirementApply(reqKey: string, accType: string, accRegistration: string | null): boolean {
+  const typeStr = (accType + ' ' + (accRegistration || '')).toLowerCase();
   
-  // Robust substring/inclusion checks (e.g. Traditional IRA includes ira, Roth IRA includes roth ira)
-  const typeMatch = appliesList.some(appType => 
-    accType.toLowerCase().includes(appType) || appType.includes(accType.toLowerCase())
-  );
-  
-  const regMatch = accRegistration ? appliesList.some(appReg => 
-    accRegistration.toLowerCase().includes(appReg) || appReg.includes(accRegistration.toLowerCase())
-  ) : false;
+  let profileType = 'Individual Taxable';
+  if (typeStr.includes('inherited')) profileType = 'Inherited IRA';
+  else if (typeStr.includes('roth')) profileType = 'Roth IRA';
+  else if (typeStr.includes('sep') || typeStr.includes('simple')) profileType = 'SEP IRA';
+  else if (typeStr.includes('ira') || typeStr.includes('rollover') || typeStr.includes('traditional')) profileType = 'Traditional IRA';
+  else if (typeStr.includes('trust')) profileType = 'Trust';
+  else if (typeStr.includes('corporate') || typeStr.includes('corporation')) profileType = 'Corporate';
+  else if (typeStr.includes('llc')) profileType = 'LLC';
+  else if (typeStr.includes('estate')) profileType = 'Estate';
+  else if (typeStr.includes('529') || typeStr.includes('education')) profileType = '529';
+  else if (typeStr.includes('utma') || typeStr.includes('ugma')) profileType = 'UTMA';
+  else if (typeStr.includes('joint')) profileType = 'Joint';
+  else if (typeStr.includes('annuity')) profileType = 'Annuity';
+  else if (typeStr.includes('alternative') || typeStr.includes('alt')) profileType = 'Alternative Investment';
+  else if (typeStr.includes('individual') || typeStr.includes('taxable')) profileType = 'Individual Taxable';
 
-  return typeMatch || regMatch;
+  // 1. Core client information applies to ALL profiles
+  if ([
+    'client_addressCurrent',
+    'client_emailCurrent',
+    'client_phoneCurrent',
+    'client_trustedContact',
+    'client_relationshipsVerified'
+  ].includes(reqKey)) {
+    return true;
+  }
+
+  // 2. Core KYC applies to ALL profiles
+  if ([
+    'kyc_riskTolerance',
+    'kyc_investmentObjectives',
+    'kyc_timeHorizon',
+    'kyc_liquidityNeeds',
+    'kyc_incomeNetWorth',
+    'kyc_lastReview'
+  ].includes(reqKey)) {
+    return true;
+  }
+
+  // 3. Core Account Documents
+  if ([
+    'doc_advisoryAgreement',
+    'doc_accountApplication',
+    'doc_transferRestrictions'
+  ].includes(reqKey)) {
+    return true;
+  }
+
+  // 4. Beneficiary Designation: retirement/IRA accounts and Annuity.
+  if (reqKey === 'doc_beneficiaryDesignation') {
+    return [
+      'Roth IRA',
+      'Traditional IRA',
+      'SEP IRA',
+      'Inherited IRA',
+      'Annuity'
+    ].includes(profileType);
+  }
+
+  // 5. Banking (ACH, Voided Check, Standing Instructions): applies to standard transactional accounts.
+  // Excluded from Annuity and Alternative Investment.
+  if ([
+    'banking_achAuthorization',
+    'banking_voidedCheck',
+    'banking_standingInstructions'
+  ].includes(reqKey)) {
+    return ![
+      'Annuity',
+      'Alternative Investment'
+    ].includes(profileType);
+  }
+
+  // 6. Trust Accounts: Trust Certification, Trustee Pages, Successor Trustee, Trust Tax ID
+  if ([
+    'trust_certification',
+    'trust_trusteePages',
+    'trust_successorTrustee',
+    'trust_taxId'
+  ].includes(reqKey)) {
+    return profileType === 'Trust';
+  }
+
+  // 7. Corporate/LLC: Articles, Operating Agreement, Corporate Resolution, EIN, Authorized Signers
+  if ([
+    'entity_articles',
+    'entity_operatingAgreement',
+    'entity_ein',
+    'entity_resolution',
+    'entity_signers'
+  ].includes(reqKey)) {
+    return ['Corporate', 'LLC'].includes(profileType);
+  }
+
+  // 8. Estate Accounts: Death Certificate, Letters Testamentary, Executor Documentation
+  // Note: Death Certificate also applies to Inherited IRA
+  if (reqKey === 'estate_deathCertificate') {
+    return ['Estate', 'Inherited IRA'].includes(profileType);
+  }
+  if ([
+    'estate_letters',
+    'estate_executor'
+  ].includes(reqKey)) {
+    return profileType === 'Estate';
+  }
+
+  // 9. Power/Guardianship/Conservatorship: UTMA / UGMA
+  if ([
+    'power_poa',
+    'power_guardianship',
+    'power_conservatorship'
+  ].includes(reqKey)) {
+    return profileType === 'UTMA';
+  }
+
+  // 10. Retirement specific items (IRA Documentation, Beneficiary Review, RMD Status)
+  if ([
+    'retire_ira',
+    'retire_beneficiary',
+    'retire_rmd'
+  ].includes(reqKey)) {
+    return [
+      'Roth IRA',
+      'Traditional IRA',
+      'SEP IRA',
+      'Inherited IRA'
+    ].includes(profileType);
+  }
+
+  // 11. Inherited IRA specific items (Inherited IRA Documentation)
+  if (reqKey === 'retire_inheritedIra') {
+    return profileType === 'Inherited IRA';
+  }
+
+  // 12. Annuities
+  if (reqKey === 'special_annuities') {
+    return profileType === 'Annuity';
+  }
+
+  // 13. Alternative Investments
+  if (reqKey === 'special_alts') {
+    return profileType === 'Alternative Investment';
+  }
+
+  // 14. Direct Business / Restricted Assets
+  if (reqKey === 'special_directBusiness' || reqKey === 'special_restrictedAssets') {
+    return ['Annuity', 'Alternative Investment'].includes(profileType);
+  }
+
+  return false;
 }
 
 const checklistItemsToSeed = [
@@ -91,7 +227,7 @@ function getInitialStatusAndEvidence(key: string, isApplicable: boolean, acc: an
       status: 'Verified',
       evidence: `CRM contains verified address: ${address}`
     } : {
-      status: 'Unknown',
+      status: 'Needs Attention',
       evidence: 'No valid address details present in CRM; physical audit required.'
     };
   }
@@ -104,7 +240,7 @@ function getInitialStatusAndEvidence(key: string, isApplicable: boolean, acc: an
       status: 'Verified',
       evidence: `CRM contains valid email: ${email}`
     } : {
-      status: 'Unknown',
+      status: 'Needs Attention',
       evidence: 'No valid email address present in CRM; physical audit required.'
     };
   }
@@ -117,7 +253,7 @@ function getInitialStatusAndEvidence(key: string, isApplicable: boolean, acc: an
       status: 'Verified',
       evidence: `CRM contains valid phone: ${phone}`
     } : {
-      status: 'Unknown',
+      status: 'Needs Attention',
       evidence: 'No valid phone number present in CRM; physical audit required.'
     };
   }
@@ -129,7 +265,7 @@ function getInitialStatusAndEvidence(key: string, isApplicable: boolean, acc: an
       status: 'Verified',
       evidence: `Account type verified from imported CRM type: ${acc.type}`
     } : {
-      status: 'Unknown',
+      status: 'Needs Attention',
       evidence: 'Account type not specified in CRM; physical audit required.'
     };
   }
@@ -141,7 +277,7 @@ function getInitialStatusAndEvidence(key: string, isApplicable: boolean, acc: an
       status: 'Verified',
       evidence: `Registration verified from imported CRM registration: ${acc.registration}`
     } : {
-      status: 'Unknown',
+      status: 'Needs Attention',
       evidence: 'Registration not specified in CRM; physical audit required.'
     };
   }
@@ -153,7 +289,7 @@ function getInitialStatusAndEvidence(key: string, isApplicable: boolean, acc: an
       status: 'Verified',
       evidence: `Custodian verified from imported CRM custodian: ${acc.custodian}`
     } : {
-      status: 'Unknown',
+      status: 'Needs Attention',
       evidence: 'Custodian not specified in CRM; physical audit required.'
     };
   }
@@ -165,36 +301,36 @@ function getInitialStatusAndEvidence(key: string, isApplicable: boolean, acc: an
       status: 'Verified',
       evidence: `Account AUM value verified from imported CRM value: $${acc.value.toLocaleString()}`
     } : {
-      status: 'Unknown',
+      status: 'Needs Attention',
       evidence: 'Account AUM value is missing or zero in CRM; physical audit required.'
     };
   }
 
-  // 8. Trusted Contact: verified only if a trusted-contact field exists; otherwise Unknown
+  // 8. Trusted Contact: verified only if a trusted-contact field exists; otherwise Needs Attention
   if (key === 'client_trustedContact') {
     const hasTrustedContact = notesStr.includes('trusted contact') || notesStr.includes('trusted-contact') || notesStr.includes('trusted contact name') || notesStr.includes('trusted contact:');
     return hasTrustedContact ? {
       status: 'Verified',
       evidence: 'CRM contains trusted contact field: verified.'
     } : {
-      status: 'Unknown',
+      status: 'Needs Attention',
       evidence: 'No trusted contact field exists in CRM; physical audit required.'
     };
   }
 
-  // 9. Risk Tolerance Current: do not infer current from the existence of a risk score; require a review date, otherwise Unknown
+  // 9. Risk Tolerance Current: do not infer current from the existence of a risk score; require a review date, otherwise Needs Attention
   if (key === 'kyc_riskTolerance') {
     const hasRiskReviewDate = notesStr.includes('risk review date') || notesStr.includes('risk tolerance review') || notesStr.includes('risk profile review') || notesStr.includes('risk tolerance verified date') || notesStr.includes('risk review:');
     return hasRiskReviewDate ? {
       status: 'Verified',
       evidence: 'CRM contains risk tolerance and a recent review date: verified.'
     } : {
-      status: 'Unknown',
+      status: 'Needs Attention',
       evidence: 'CRM contains risk tolerance but lacks a recent review date; physical audit required.'
     };
   }
 
-  // 10. Beneficiary Review: Unknown unless beneficiary data and review date are present
+  // 10. Beneficiary Review: Needs Attention unless beneficiary data and review date are present
   if (key === 'doc_beneficiaryDesignation' || key === 'retire_beneficiary') {
     const hasBenData = notesStr.includes('beneficiary designation') || notesStr.includes('beneficiary name') || notesStr.includes('beneficiary:') || notesStr.includes('primary beneficiary');
     const hasBenReview = notesStr.includes('beneficiary review') || notesStr.includes('beneficiary verified') || notesStr.includes('beneficiary date') || notesStr.includes('beneficiary review:');
@@ -202,36 +338,36 @@ function getInitialStatusAndEvidence(key: string, isApplicable: boolean, acc: an
       status: 'Verified',
       evidence: 'CRM contains beneficiary designation data and review date: verified.'
     } : {
-      status: 'Unknown',
+      status: 'Needs Attention',
       evidence: 'CRM does not contain both beneficiary designation data and review date; physical audit required.'
     };
   }
 
-  // 11. Trust Documentation: Unknown for trust accounts unless document evidence exists
+  // 11. Trust Documentation: Needs Attention for trust accounts unless document evidence exists
   if (key.startsWith('trust_')) {
     const hasTrustEvidence = notesStr.includes('trust agreement') || notesStr.includes('trust certification') || notesStr.includes('certification of trust') || notesStr.includes('trust documents on file') || notesStr.includes('trust documentation:');
     return hasTrustEvidence ? {
       status: 'Verified',
       evidence: 'CRM contains trust document verification evidence: verified.'
     } : {
-      status: 'Unknown',
+      status: 'Needs Attention',
       evidence: 'Trust account exists, but trust documentation is physically unverified.'
     };
   }
 
-  // 12. ACH Documentation: Unknown unless ACH/bank documentation fields exist
+  // 12. ACH Documentation: Needs Attention unless ACH/bank documentation fields exist
   if (key.startsWith('banking_')) {
     const hasAchEvidence = notesStr.includes('ach setup') || notesStr.includes('voided check') || notesStr.includes('bank verification') || notesStr.includes('ach authorization') || notesStr.includes('standing instructions verified') || notesStr.includes('ach documentation:');
     return hasAchEvidence ? {
       status: 'Verified',
       evidence: 'CRM contains ACH/bank account documentation fields: verified.'
     } : {
-      status: 'Unknown',
+      status: 'Needs Attention',
       evidence: 'ACH instructions exist, but bank documentation is physically unverified.'
     };
   }
 
-  // Default paperwork items default to Unknown
+  // Default paperwork items default to Needs Attention
   const paperworkKeys = [
     'doc_advisoryAgreement',
     'doc_accountApplication',
@@ -259,13 +395,13 @@ function getInitialStatusAndEvidence(key: string, isApplicable: boolean, acc: an
   const isPaperwork = paperworkKeys.some(k => key.toLowerCase() === k.toLowerCase());
   if (isPaperwork) {
     return {
-      status: 'Unknown',
+      status: 'Needs Attention',
       evidence: 'CRM cannot verify physical/legal paperwork presence.'
     };
   }
 
   return {
-    status: 'Inferred',
+    status: 'Verified',
     evidence: 'Inferred from CRM profile metrics.'
   };
 }
@@ -295,7 +431,7 @@ export async function runEvaluationPipeline(advisorId: string, authorFullName: s
   const totalAccCount = accounts.length;
 
   // 1.5 Update Advisor AUM, revenue, households, and accounts counts
-  const finalAdvisorAum = households.reduce((sum, h) => sum + (h.totalAum || 0), 0);
+  const finalAdvisorAum = Math.round(households.reduce((sum, h) => sum + (h.totalAum || 0), 0) * 10) / 10;
   const finalAdvisorRev = households.reduce((sum, h) => sum + (h.revenue || 0), 0);
   await prisma.advisor.update({
     where: { id: advisorId },
@@ -347,13 +483,13 @@ export async function runEvaluationPipeline(advisorId: string, authorFullName: s
   // 3. Upsert Account Checklist Items
   console.log('Generating/updating account checklist items...');
   for (const acc of accounts) {
-    const matchedCount = activeRequirements.filter(req => doesRequirementApply(req.appliesToAccountTypes, acc.type, acc.registration)).length;
+    const matchedCount = activeRequirements.filter(req => doesRequirementApply(req.id, acc.type, acc.registration)).length;
     if (matchedCount === 0) {
       console.log(`WARNING: No matching requirements found for account type "${acc.type}" (Account: "${acc.name}", Registration: "${acc.registration || 'None'}"). Matching failed because no active Requirement Library entries apply to this account type/registration.`);
     }
 
     for (const req of activeRequirements) {
-      const isApplicable = doesRequirementApply(req.appliesToAccountTypes, acc.type, acc.registration);
+      const isApplicable = doesRequirementApply(req.id, acc.type, acc.registration);
 
       // Check if item already exists in database
       const existingItem = await prisma.accountChecklistItem.findUnique({
@@ -439,8 +575,8 @@ export async function runEvaluationPipeline(advisorId: string, authorFullName: s
 
   // Create Findings for Missing/Needs Review items, and clean up resolved/present items
   console.log('Synchronizing findings...');
-  const unresolvedItems = allChecklistItems.filter(item => ['Missing', 'Needs Review'].includes(item.status));
-  const resolvedItems = allChecklistItems.filter(item => !['Missing', 'Needs Review'].includes(item.status));
+  const unresolvedItems = allChecklistItems.filter(item => ['Missing', 'Needs Attention', 'Needs Review'].includes(item.status));
+  const resolvedItems = allChecklistItems.filter(item => !['Missing', 'Needs Attention', 'Needs Review'].includes(item.status));
 
   // Remove findings for items that are no longer Missing/Needs Review
   const resolvedItemIds = resolvedItems.map(item => item.id);
@@ -488,10 +624,9 @@ export async function runEvaluationPipeline(advisorId: string, authorFullName: s
   //    CS = (Sum of (Requirement Weight * Status Multiplier) / Sum of Weights) * 100
   //    Multipliers:
   //      - Verified / Inferred / Present: 1.0
-  //      - Unknown: 0.5
-  //      - Needs Review: 0.25
+  //      - Needs Attention / Unknown / Needs Review: 0.5
   //      - Missing: 0.0
-  //      - Not Applicable: Excluded
+  //      - Not Applicable: Excluded completely
   // 2. Account Readiness Score (ARS):
   //    ARS = Max(0, CS - (15 * Count of Critical Missing Requirements))
   // 3. Household Readiness Score (HRS):
@@ -504,7 +639,7 @@ export async function runEvaluationPipeline(advisorId: string, authorFullName: s
   console.log('--- SCORING FORMULA AUDIT LOG ---');
   console.log('1. Account Completion Score (CS):');
   console.log('   CS = (Sum of (Requirement Weight * Status Multiplier) / Sum of Weights) * 100');
-  console.log('   Multipliers: Verified/Inferred/Present = 1.0, Unknown = 0.5, Needs Review = 0.25, Missing = 0.0');
+  console.log('   Multipliers: Verified = 1.0, Needs Attention = 0.5, Missing = 0.0');
   console.log('2. Account Readiness Score (ARS):');
   console.log('   ARS = Max(0, CS - (15 * Count of Critical Missing Requirements))');
   console.log('3. Household Readiness Score (HRS):');
@@ -530,10 +665,8 @@ export async function runEvaluationPipeline(advisorId: string, authorFullName: s
       let multiplier = 0.0;
       if (['Present', 'Verified', 'Inferred'].includes(item.status)) {
         multiplier = 1.0;
-      } else if (item.status === 'Unknown') {
+      } else if (['Needs Attention', 'Unknown', 'Needs Review'].includes(item.status)) {
         multiplier = 0.5;
-      } else if (item.status === 'Needs Review') {
-        multiplier = 0.25;
       } else if (item.status === 'Missing') {
         multiplier = 0.0;
         if (item.requirement?.critical) {
@@ -586,8 +719,7 @@ export async function runEvaluationPipeline(advisorId: string, authorFullName: s
     clientInfoWeights += weight;
     let multiplier = 0.0;
     if (['Present', 'Verified', 'Inferred'].includes(item.status)) multiplier = 1.0;
-    else if (item.status === 'Unknown') multiplier = 0.5;
-    else if (item.status === 'Needs Review') multiplier = 0.25;
+    else if (['Needs Attention', 'Unknown', 'Needs Review'].includes(item.status)) multiplier = 0.5;
     clientInfoWeightedSum += weight * multiplier;
   });
   const clientDataScore = clientInfoWeights > 0 ? Math.round((clientInfoWeightedSum / clientInfoWeights) * 100) : 100;
@@ -601,8 +733,7 @@ export async function runEvaluationPipeline(advisorId: string, authorFullName: s
     kycWeights += weight;
     let multiplier = 0.0;
     if (['Present', 'Verified', 'Inferred'].includes(item.status)) multiplier = 1.0;
-    else if (item.status === 'Unknown') multiplier = 0.5;
-    else if (item.status === 'Needs Review') multiplier = 0.25;
+    else if (['Needs Attention', 'Unknown', 'Needs Review'].includes(item.status)) multiplier = 0.5;
     kycWeightedSum += weight * multiplier;
   });
   const kycDocumentationScore = kycWeights > 0 ? Math.round((kycWeightedSum / kycWeights) * 100) : 100;
