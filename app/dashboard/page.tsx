@@ -14,6 +14,21 @@ export default async function DashboardPage() {
     redirect('/login');
   }
 
+  // Automatically evaluate existing Michael Bennett demo advisor if pending/not evaluated
+  const bennett = await prisma.advisor.findFirst({
+    where: { name: 'Michael Bennett' }
+  });
+  if (bennett) {
+    const latestAssessment = await prisma.assessment.findFirst({
+      where: { advisorId: bennett.id },
+      orderBy: { createdAt: 'desc' }
+    });
+    if (!latestAssessment || latestAssessment.overallReadinessScore === 0) {
+      const { runEvaluationPipeline } = require('@/lib/evaluation-pipeline');
+      await runEvaluationPipeline(bennett.id, 'System Auto-Evaluation');
+    }
+  }
+
   // Fetch all advisors from database with their assessments to calculate overall metrics
   const advisors = await prisma.advisor.findMany({
     orderBy: { createdAt: 'desc' },
