@@ -19,11 +19,13 @@ export default async function DashboardPage() {
     where: { name: 'Michael Bennett' }
   });
   if (bennett) {
-    const latestAssessment = await prisma.assessment.findFirst({
-      where: { advisorId: bennett.id },
-      orderBy: { createdAt: 'desc' }
+    const hasRun = await prisma.accountChecklistItem.findFirst({
+      where: {
+        account: { household: { advisorId: bennett.id } },
+        status: { in: ['Verified', 'Inferred'] }
+      }
     });
-    if (!latestAssessment || latestAssessment.overallReadinessScore === 0) {
+    if (!hasRun) {
       const { runEvaluationPipeline } = require('@/lib/evaluation-pipeline');
       await runEvaluationPipeline(bennett.id, 'System Auto-Evaluation');
     }
