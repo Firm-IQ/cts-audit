@@ -253,26 +253,27 @@ async function main() {
     });
   }
 
-  const user = await prisma.user.upsert({
-    where: { email: 'curt@gocontinuity.com' },
-    update: {
-      role: 'Super Admin',
-      active: true,
-      password: '', // Empty password to initialize on first login
-      mustChangePassword: true
-    },
-    create: {
-      email: 'curt@gocontinuity.com',
-      firstName: 'Curt',
-      lastName: 'Kloc',
-      role: 'Super Admin',
-      active: true,
-      password: '', // Empty password to initialize on first login
-      mustChangePassword: true,
-    }
+  const existingUser = await prisma.user.findUnique({
+    where: { email: 'curt@gocontinuity.com' }
   });
 
-  console.log(`Admin user seeded: ${user.email}`);
+  let user = existingUser;
+  if (!existingUser) {
+    user = await prisma.user.create({
+      data: {
+        email: 'curt@gocontinuity.com',
+        firstName: 'Curt',
+        lastName: 'Kloc',
+        role: 'Super Admin',
+        active: true,
+        password: '', // Empty password to initialize on first login
+        mustChangePassword: true,
+      }
+    });
+    console.log(`Admin user created: ${user.email}`);
+  } else {
+    console.log(`Admin user already exists, not resetting credentials.`);
+  }
 
   // Mock Advisor 1: Sarah Jenkins / Jenkins Wealth Advisors
   const advisor1 = await prisma.advisor.create({

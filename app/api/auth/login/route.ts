@@ -52,88 +52,94 @@ export async function POST(request: Request) {
       );
     }
 
-    // 4. Handle first-time password setup (where password is empty)
-    const isFirstTimeSetup = user.password === '' && user.mustChangePassword;
+    // 4. Handle Password Setup and standard authentication flow
+    if (isSetup) {
+      if (!user.mustChangePassword) {
+        return NextResponse.json(
+          { error: 'Password change is not required for this account.' },
+          { status: 400 }
+        );
+      }
 
-    if (isFirstTimeSetup) {
-      if (isSetup) {
-        // Client is submitting the password setup form
-        if (!newPassword || !confirmPassword) {
-          return NextResponse.json(
-            { error: 'New password and confirmation are required' },
-            { status: 400 }
-          );
+      if (!newPassword || !confirmPassword) {
+        return NextResponse.json(
+          { error: 'New password and confirmation are required' },
+          { status: 400 }
+        );
+      }
+      if (newPassword !== confirmPassword) {
+        return NextResponse.json(
+          { error: 'Passwords do not match' },
+          { status: 400 }
+        );
+      }
+      if (newPassword.length < 6) {
+        return NextResponse.json(
+          { error: 'Password must be at least 6 characters long' },
+          { status: 400 }
+        );
+      }
+
+      // Hash and save the password
+      const hashedPassword = await hashPassword(newPassword);
+      
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          password: hashedPassword,
+          mustChangePassword: false,
+          lastLogin: new Date(),
         }
-        if (newPassword !== confirmPassword) {
-          return NextResponse.json(
-            { error: 'Passwords do not match' },
-            { status: 400 }
-          );
-        }
-        if (newPassword.length < 6) {
-          return NextResponse.json(
-            { error: 'Password must be at least 6 characters long' },
-            { status: 400 }
-          );
-        }
+      });
 
-        // Hash and save the password
-        const hashedPassword = await hashPassword(newPassword);
-        
-        await prisma.user.update({
-          where: { id: user.id },
-          data: {
-            password: hashedPassword,
-            mustChangePassword: false,
-            lastLogin: new Date(),
-          }
-        });
+      // Sign session JWT
+      const name = user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.firstName || user.lastName || 'Auditor';
+      const token = await signJWT({
+        userId: user.id,
+        email: user.email,
+        name,
+        role: user.role,
+      });
 
-        // Sign session JWT
-        const name = user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.firstName || user.lastName || 'Auditor';
-        const token = await signJWT({
-          userId: user.id,
-          email: user.email,
-          name,
-          role: user.role,
-        });
+      const response = NextResponse.json({ success: true });
+      response.cookies.set({
+        name: 'cts_session',
+        value: token,
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 60 * 60 * 24, // 24 hours
+      });
 
-        const response = NextResponse.json({ success: true });
-        response.cookies.set({
-          name: 'cts_session',
-          value: token,
-          httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: 'lax',
-          path: '/',
-          maxAge: 60 * 60 * 24, // 24 hours
-        });
+      return response;
+    }
 
-        return response;
-      } else {
-        // Client entered email on first login attempt; redirect to setup password
-        return NextResponse.json({
-          mustSetPassword: true,
-          email: user.email,
-          name: user.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : 'Auditor',
-        });
+    // Standard Login Form Submission
+    if (user.password !== '') {
+      if (!password) {
+        return NextResponse.json(
+          { error: 'Password is required' },
+          { status: 400 }
+        );
+      }
+
+      const isPasswordValid = await comparePassword(password, user.password);
+      if (!isPasswordValid) {
+        return NextResponse.json(
+          { error: 'Invalid email or password' },
+          { status: 401 }
+        );
       }
     }
 
-    // 5. Standard Login flow
-    if (!password) {
-      return NextResponse.json(
-        { error: 'Password is required' },
-        { status: 400 }
-      );
-    }
-
-    const isPasswordValid = await comparePassword(password, user.password);
-    if (!isPasswordValid) {
-      return NextResponse.json(
-        { error: 'Invalid email or password' },
-        { status: 401 }
-      );
+    // If password is correct (or empty initially) and mustChangePassword is true, prompt change password
+    if (user.mustChangePassword) {
+      return NextResponse.json({
+        mustSetPassword: true,
+        email: user.email,
+        name: user.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : 'Auditor',
+      });
     }
 
     // Update lastLogin datetime
