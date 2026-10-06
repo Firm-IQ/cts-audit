@@ -823,23 +823,6 @@ Sole practitioner with very limited staff capacity. CRM is highly unorganized. M
     }
   }
 
-  // Check if Daniel Harper demo advisor exists; if missing, seed Daniel Harper
-  const existingHarper = await prisma.advisor.findFirst({
-    where: { name: 'Daniel Harper', firmName: 'Harper Wealth Management' }
-  });
-
-  if (!existingHarper) {
-    console.log('Daniel Harper demo advisor not found. Seeding Daniel Harper demo...');
-    const { execSync } = require('child_process');
-    try {
-      execSync('npx tsx scripts/seed-daniel-harper.ts', { stdio: 'inherit' });
-    } catch (err) {
-      console.error('Warning: Failed to execute seed-daniel-harper.ts via seed.js:', err.message);
-    }
-  } else {
-    console.log(`Daniel Harper demo advisor already exists (${existingHarper.id}).`);
-  }
-
   console.log('Seed completed successfully!');
 }
 

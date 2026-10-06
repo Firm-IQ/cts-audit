@@ -37,17 +37,10 @@ ADMIN_PASSWORD=""
 ```
 
 ### 4. Database Setup & Seeding
-Run initial Prisma migrations to set up the PostgreSQL database and seed the initial administrator credentials along with mock advisor assessments:
+Run initial Prisma migrations to set up the PostgreSQL database and seed the initial administrator credentials along with three mock advisor assessments (Ready, Advisory, and Critical):
 ```bash
 npx prisma migrate dev --name init
 npx prisma db seed
-```
-
-To seed or re-seed the completed-audit showcase advisor (**Daniel Harper / Harper Wealth Management** - 82 households, 185 accounts, $42M AUM):
-```bash
-npm run seed-harper
-# or target a specific PostgreSQL database:
-DATABASE_URL="<postgres-connection-string>" npm run seed-harper
 ```
 
 ### 5. Start the Development Server
