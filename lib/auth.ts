@@ -2,6 +2,12 @@ import { SignJWT, jwtVerify } from 'jose';
 import bcrypt from 'bcryptjs';
 import { cookies } from 'next/headers';
 
+// ============================================================================
+// DEVELOPMENT ONLY: Authentication Bypass Flag
+// Set to false to re-enable strict session checking.
+// ============================================================================
+export const DEV_AUTH_BYPASS = true;
+
 const JWT_SECRET = process.env.JWT_SECRET || 'continuity-transition-readiness-audit-jwt-secret-key-987654321';
 const key = new TextEncoder().encode(JWT_SECRET);
 
@@ -43,8 +49,39 @@ export async function verifyJWT(token: string): Promise<JWTPayload | null> {
 export async function getSession(): Promise<JWTPayload | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get('cts_session')?.value;
-  if (!token) return null;
-  return verifyJWT(token);
+  if (token) {
+    const session = await verifyJWT(token);
+    if (session) return session;
+  }
+
+  // DEVELOPMENT ONLY: Provide default Super Admin session when bypass is active
+  if (DEV_AUTH_BYPASS) {
+    try {
+      const { prisma } = await import('@/lib/db');
+      const admin = await prisma.user.findFirst({
+        where: { email: 'curt@gocontinuity.com' },
+      });
+      if (admin) {
+        return {
+          userId: admin.id,
+          email: admin.email,
+          name: admin.firstName && admin.lastName ? `${admin.firstName} ${admin.lastName}` : (admin.firstName || 'Curt Kloc'),
+          role: admin.role,
+        };
+      }
+    } catch (e) {
+      // In case DB is unavailable during edge execution or pre-rendering
+    }
+
+    return {
+      userId: 'dev-admin',
+      email: 'curt@gocontinuity.com',
+      name: 'Curt Kloc',
+      role: 'Super Admin',
+    };
+  }
+
+  return null;
 }
 
 export async function logout() {

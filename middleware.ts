@@ -2,15 +2,23 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { jwtVerify } from 'jose';
 
+// ============================================================================
+// DEVELOPMENT ONLY: Authentication Bypass Flag
+// Set to false to re-enable full production authentication and redirects.
+// ============================================================================
+export const DEV_AUTH_BYPASS = true;
+
 const JWT_SECRET = process.env.JWT_SECRET || 'continuity-transition-readiness-audit-jwt-secret-key-987654321';
 const key = new TextEncoder().encode(JWT_SECRET);
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Define public paths that bypass auth checking
-  const isPublicPath = pathname === '/login' || pathname.startsWith('/api/auth/login');
-  
+  // Root path always redirects to /dashboard
+  if (pathname === '/') {
+    return NextResponse.redirect(new URL('/dashboard', request.url));
+  }
+
   // Exclude static assets, icons, manifest files
   if (
     pathname.startsWith('/_next') ||
@@ -21,6 +29,13 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // DEVELOPMENT ONLY: If auth bypass is enabled, skip all auth redirects
+  if (DEV_AUTH_BYPASS) {
+    return NextResponse.next();
+  }
+
+  // --- Production Authentication & Redirect Logic (Kept for re-enabling) ---
+  const isPublicPath = pathname === '/login' || pathname.startsWith('/api/auth/login');
   const token = request.cookies.get('cts_session')?.value;
 
   let isAuthenticated = false;
@@ -48,11 +63,6 @@ export async function middleware(request: NextRequest) {
     const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('callbackUrl', pathname);
     return NextResponse.redirect(loginUrl);
-  }
-
-  // Redirect root path to dashboard
-  if (pathname === '/') {
-    return NextResponse.redirect(new URL('/dashboard', request.url));
   }
 
   return NextResponse.next();
