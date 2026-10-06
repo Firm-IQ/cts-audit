@@ -1,5 +1,23 @@
-import { prisma } from '../lib/db';
-import { runEvaluationPipeline } from '../lib/evaluation-pipeline';
+import { PrismaClient } from '@prisma/client';
+
+// Support both root lib/ and src/lib/ project layouts
+let prisma: PrismaClient;
+try {
+  prisma = require('../lib/db').prisma || new PrismaClient();
+} catch {
+  try {
+    prisma = require('../src/lib/db').prisma || new PrismaClient();
+  } catch {
+    prisma = new PrismaClient();
+  }
+}
+
+let runEvaluationPipeline: (advisorId: string, assessmentName?: string) => Promise<any>;
+try {
+  runEvaluationPipeline = require('../lib/evaluation-pipeline').runEvaluationPipeline;
+} catch {
+  runEvaluationPipeline = require('../src/lib/evaluation-pipeline').runEvaluationPipeline;
+}
 
 interface AccountDef {
   name: string;
