@@ -1,7 +1,5 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/db';
 import { runEvaluationPipeline } from '../lib/evaluation-pipeline';
-
-const prisma = new PrismaClient();
 
 interface AccountDef {
   name: string;
@@ -40,13 +38,29 @@ async function main() {
     console.log('Existing advisor and associated records cleanly removed.\n');
   }
 
-  // 2. Resolve Admin User
-  const adminUser = await prisma.user.findFirst({
+  // 2. Resolve Admin User (create if missing on fresh production database)
+  let adminUser = await prisma.user.findFirst({
     where: { email: 'curt@gocontinuity.com' }
-  }) || await prisma.user.findFirst();
+  });
 
-  const createdById = adminUser ? adminUser.id : null;
-  console.log(`Associating advisor with user: ${adminUser?.email || 'None'} (${createdById})`);
+  if (!adminUser) {
+    console.log('Admin user "curt@gocontinuity.com" not found. Creating default admin user for production setup...');
+    adminUser = await prisma.user.create({
+      data: {
+        email: 'curt@gocontinuity.com',
+        firstName: 'Curt',
+        lastName: 'Kloc',
+        role: 'Super Admin',
+        active: true,
+        password: '',
+        mustChangePassword: true,
+      }
+    });
+    console.log(`Created admin user: ${adminUser.email} (${adminUser.id})`);
+  }
+
+  const createdById = adminUser.id;
+  console.log(`Associating advisor with user: ${adminUser.email} (${createdById})`);
 
   // 3. Create Advisor Daniel Harper
   const advisor = await prisma.advisor.create({

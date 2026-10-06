@@ -10,7 +10,8 @@
     "reset-admin": "node scripts/reset-admin.js",
     "reset-admin-password": "tsx scripts/reset-admin-password.ts",
     "seed-demo-advisor": "tsx scripts/seed-demo-advisor.ts",
-    "seed-harper": "tsx scripts/seed-daniel-harper.ts"
+    "seed-harper": "tsx scripts/seed-daniel-harper.ts",
+    "seed-daniel-harper": "tsx scripts/seed-daniel-harper.ts"
   },
   "prisma": {
     "seed": "node prisma/seed.js"
@@ -24,7 +25,8 @@
     "prisma": "^6.19.3",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "recharts": "^3.9.2"
+    "recharts": "^3.9.2",
+    "tsx": "^4.23.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -35,7 +37,6 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
     "tailwindcss": "^4",
-    "tsx": "^4.23.0",
     "typescript": "^5"
   }
 }
